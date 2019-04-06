@@ -4,17 +4,18 @@
 
 #define DISK_PG 32000
 #define TRASH '@'
+#define N_RECORDS 5000
 
 typedef struct record_ Record;
 typedef struct queue_ Queue;
 typedef struct node_ Node;
 
 struct record_{
-    int idServidor;
-    double salarioServidor;
-    char telefoneServidor[15];
     char nomeServidor[100];
     char cargoServidor[100];
+    char telefoneServidor[15];
+    double salarioServidor;
+    int idServidor;
 };
 
 struct node_{
@@ -27,10 +28,28 @@ struct queue_{
     Node *end;
 };
 
-Node *node_create(){
-    Node *n = (Node *)malloc(szieof(Node));
+Record *record_create(int id, double salario, char *telefone, char *nome, char *cargo){
+    Record *r = (Record *)malloc(sizeof(Record));
+
+    r->idServidor = id;
+    r->salarioServidor = salario;
+
+    strcpy(r->telefoneServidor, telefone);
+    strcpy(r->nomeServidor, nome);
+    strcpy(r->cargoServidor, cargo);
+
+    return r;
+}
+
+void record_free(Record *r){
+    if (r == NULL) return;
+    free(r);
+}
+
+Node *node_create(Record *r){
+    Node *n = (Node *)malloc(sizeof(Node));
     n->next = NULL;
-    n->record = NULL;
+    n->record = r;
     return n;
 }
 
@@ -43,7 +62,7 @@ void node_free(Node *n){
 Queue *queue_create(){
     Queue *q = (Queue *)malloc(sizeof(Queue));
 
-    q->head = node_create();
+    q->head = node_create(NULL);
     q->end = q->head;
 
     return q;
@@ -66,22 +85,17 @@ void queue_insert(Queue *q, Record *r){
     q->end = q->end->next;
 }
 
-Record *record_create(int id, double salario, char *telefone, char *nome, char *cargo){
-    Record *r = (Record *)malloc(sizeof(Record));
 
-    r->idServidor = id;
-    r->salarioServidor = salario;
+/* cria nova pagina de disco inicializada com lixo e avança o FP para o inicio da nova pg., incrementa pages */
+void create_new_disk_page(FILE *fp, int *pages){
+    fseek(fp, (long)((*pages)*DISK_PG), SEEK_SET);    // posiciona o ptr no começo da proxima pagina
+    char trash[DISK_PG + 1];
+    memset(trash, '@', sizeof(trash));
 
-    strcpy(r->telefoneServidor, telefone);
-    strcpy(r->nomeServidor, nome);
-    strcpy(r->cargoServidor, cargo);
-
-    return r;
-}
-
-void record_free(Record *r){
-    if (r == NULL) return;
-    free(r);
+    fwrite(trash, sizeof(char), DISK_PG, fp);
+    // VERIFICAR ERRO AQUI NO ++
+    fseek(fp, (long)((*pages)*DISK_PG), SEEK_SET);    // posiciona o ptr no começo da proxima pagina
+    (*pages)++;
 }
 
 void record_print(Record *r){
@@ -92,7 +106,10 @@ void record_print(Record *r){
 Record *read_record(FILE *fp){
     int id;
     double salario;
-    char telefone[15] = {'\0'}, nome[100] = {'\0'}, cargo[100] = {'\0'};
+    char telefone[15], nome[100], cargo[100];
+    memset(telefone, '\0', sizeof(telefone));
+    memset(nome, '\0', sizeof(nome));
+    memset(cargo, '\0', sizeof(cargo));
 
     fscanf(fp, "%d", &id);
     fscanf(fp, "%*c");
@@ -105,11 +122,13 @@ Record *read_record(FILE *fp){
     fscanf(fp, "%[^\n]", nome);
     fscanf(fp, "%*c");
 
+
     return record_create(id, salario, telefone, nome, cargo);
 }
 
-void replace_trash(char *str, char *buffer){
-    memset(buffer, TRASH, 40*sizeof(char));
+/* Preenche o buffer com lixo e depois escreve str por cima */
+void replace_trash(char *str, char *buffer, int buffer_size){
+    memset(buffer, TRASH, buffer_size*sizeof(char));
     sprintf(buffer, "%s", str);
 }
 
@@ -118,46 +137,51 @@ void write_header(FILE *fp){
         // ERRO
         return;
     }
-    long temp = -1;
+    long long temp = -1;
 
     char trash[DISK_PG + 1];
     memset(trash, '@', sizeof(trash));
-
     fwrite(trash, sizeof(char), DISK_PG, fp);
-    fseek(fp, 0L, SEEK_SET);
+    fseek(fp, (long)0, SEEK_SET);               // nova pagina de disco
 
     fwrite("1", sizeof(char), 1, fp);
-    fwrite(&temp, sizeof(long), 1, fp);
+    fwrite(&temp, sizeof(long long), 1, fp);
 
     char string[40];
 
-    replace_trash("numero de identificacao do servidor", string);
+    replace_trash("numero de identificacao do servidor", string, 40);
     fwrite("i", sizeof(char), 1, fp);
     fwrite(string, sizeof(char), 40, fp);
 
-    replace_trash("salario do servidor", string);
+    replace_trash("salario do servidor", string, 40);
     fwrite("s", sizeof(char), 1, fp);
     fwrite(string, sizeof(char), 40, fp);
 
-    replace_trash("telefone celular do servidor", string);
+    replace_trash("telefone celular do servidor", string, 40);
     fwrite("t", sizeof(char), 1, fp);
     fwrite(string, sizeof(char), 40, fp);
 
-    replace_trash("nome do servidor", string);
+    replace_trash("nome do servidor", string, 40);
     fwrite("n", sizeof(char), 1, fp);
     fwrite(string, sizeof(char), 40, fp);
 
-    replace_trash("cargo do servidor", string);
+    replace_trash("cargo do servidor", string, 40);
     fwrite("c", sizeof(char), 1, fp);
     fwrite(string, sizeof(char), 40, fp);
 
     fseek(fp, (long)DISK_PG, SEEK_SET);    // coloca o fp no final da página de disco
+
+    int disk_page = 1;
+    create_new_disk_page(fp, &disk_page);
 }
 
 void print_binary_file(FILE *fp){
     fseek(fp, 0L, SEEK_SET);
+
+    char temp;
     while (!feof(fp)){
-        fwrite(fp, sizeof(char), 1, stdout);
+        fread(&temp, sizeof(char), 1, fp);
+        printf("%c", temp);
     }
 }
 
@@ -165,7 +189,7 @@ void flip_safety_bit(FILE *fp){
     fseek(fp, 0L, SEEK_SET);
 
     char temp;
-    fread(fp, sizeof(char), 1, &temp);
+    fread(&temp, sizeof(char), 1, fp);
     fseek(fp, 0L, SEEK_SET);
 
     if (temp == '0'){
@@ -177,28 +201,114 @@ void flip_safety_bit(FILE *fp){
 
 Queue *read_file(){
     FILE *input = fopen("file.csv", "r");
+    Queue *q = queue_create();
 
     fscanf(input, "%*[^\n]");  // Skips first line
     fscanf(input, "%*[\n]");
 
     Record *r;
-    for (int i = 0; i < 30; i++){
+    int i = 0;
+    for (i = 0; i < N_RECORDS; i++){
         r = read_record(input);
-        record_print(r);
-        record_free(r);
+        queue_insert(q, r);
     }
 
-    flip_safety_bit(output);
     fclose(input);
+    return q;
+}
+
+void print_queue(Queue *q){
+    Node *cur = q->head->next;
+    while (cur != NULL){
+        record_print(cur->record);
+        cur = cur->next;
+    }
+}
+
+int record_size(Record *r){
+    int ans = 1;
+    ans += sizeof(int);         // tamanho registro
+    ans += sizeof(long long);   // encadeamento lista
+    ans += sizeof(r->idServidor);
+    ans += sizeof(r->salarioServidor);
+    ans += sizeof(r->telefoneServidor) - 1;
+
+    if (r->nomeServidor[0] != '\0'){
+        ans += sizeof(int);     // tamanho do campo
+        ans += sizeof(char);    // tag
+        ans += 1 + strlen(r->nomeServidor);
+    }
+    if (r->cargoServidor[0] != '\0'){
+        ans += sizeof(int);     // tamanho do campo
+        ans += sizeof(char);    // tag
+        ans += 1 + strlen(r->cargoServidor);
+    }
+    return ans;
+}
+
+void write_record(FILE *fp, Record *r, int *bytes, int *pages){
+    int size = record_size(r);
+    if ((*bytes + size)/(double)DISK_PG > 1){
+        create_new_disk_page(fp, pages);
+        //printf("New disk page created\n");
+        *bytes = 0;  // escreve 0 bytes na nova pagina de disco
+    }
+
+    *bytes += size;     // incrementa a qt. bytes escritos
+    //printf("%05d bytes written (size of record %03d)\n", *bytes, size);
+    long long temp1 = -1;
+
+    fwrite("-", sizeof(char), 1, fp);
+    fwrite(&size, sizeof(int), 1, fp);              // tamanho do registro, -1 pq nao devo contar o '*' ou '-'
+    fwrite(&temp1, sizeof(long long), 1, fp);       // encadeamento
+    fwrite(&(r->idServidor), sizeof(int), 1, fp);
+    fwrite(&(r->salarioServidor), sizeof(double), 1, fp);
+
+    char telefone[14];
+    replace_trash(r->telefoneServidor, telefone, 14);
+    fwrite(telefone, sizeof(char), 14, fp);
+
+    int str_size;
+    if (r->nomeServidor[0] != '\0'){
+        str_size = 1 + strlen(r->nomeServidor);
+        fwrite(&str_size, sizeof(int), 1, fp);
+        fwrite("n", sizeof(char), 1, fp);
+        fwrite(r->nomeServidor, sizeof(char), str_size, fp);
+    }
+
+    if (r->cargoServidor[0] != '\0'){
+        str_size = 1 + strlen(r->cargoServidor);
+        fwrite(&str_size, sizeof(int), 1, fp);
+        fwrite("c", sizeof(char), 1, fp);
+        fwrite(r->cargoServidor, sizeof(char), str_size, fp);
+    }
+}
+
+void write_file_body(FILE *fp, Queue *q){
+    Node *cur = q->head->next;
+    int bytes_written = 0;
+    int disk_pages = 2;
+
+    while (cur != NULL){
+        // record_print(cur->record);
+        write_record(fp, cur->record, &bytes_written, &disk_pages);
+        cur = cur->next;
+    }
+}
+
+void write_file(){
+    Queue *q = read_file();
+
+    FILE *fp = fopen("test.bin", "wb+");
+    write_header(fp);
+    write_file_body(fp, q);
+
+    //print_queue(q);
+    //print_binary_file(fp);
+    queue_free(q);
+    fclose(fp);
 }
 
 int main(){
-    Queue *q = read_file();
-
-    FILE *fp = fopen("test.bin", "wb");
-    write_header(fp);
-    //print_binary_file(fp);
-
-    queue_free(q);
-    fclose(fp);
+    write_file();
 }

@@ -4,7 +4,7 @@
 
 #define DISK_PG 32000
 #define TRASH '@'
-#define N_RECORDS 5000
+#define INVALID -1337
 
 typedef struct record_ Record;
 typedef struct queue_ Queue;
@@ -100,12 +100,12 @@ void create_new_disk_page(FILE *fp, int *pages){
 
 void record_print(Record *r){
     if (r == NULL) return;
-    printf("%07d  |  %-14s  |  %-09.2lf  |  %-40s  |  %-30s\n", r->idServidor, r->telefoneServidor, r->salarioServidor, r->cargoServidor, r->nomeServidor);
+    printf("%08d  |  %-14s  |  %-09.2lf  |  %-40s  |  %-30s\n", r->idServidor, r->telefoneServidor, r->salarioServidor, r->cargoServidor, r->nomeServidor);
 }
 
 Record *read_record(FILE *fp){
-    int id;
-    double salario;
+    int id = INVALID;
+    double salario = INVALID;
     char telefone[15], nome[100], cargo[100];
     memset(telefone, '\0', sizeof(telefone));
     memset(nome, '\0', sizeof(nome));
@@ -122,7 +122,7 @@ Record *read_record(FILE *fp){
     fscanf(fp, "%[^\n]", nome);
     fscanf(fp, "%*c");
 
-
+    if (id == INVALID || salario == INVALID) return NULL;
     return record_create(id, salario, telefone, nome, cargo);
 }
 
@@ -199,18 +199,17 @@ void flip_safety_bit(FILE *fp){
     }
 }
 
-Queue *read_file(){
-    FILE *input = fopen("file.csv", "r");
+Queue *read_csv_file(char *file_name){
+    FILE *input = fopen(file_name, "r");
     Queue *q = queue_create();
 
-    fscanf(input, "%*[^\n]");  // Skips first line
+    fscanf(input, "%*[^\n]");  // pula a primeira linha do csv
     fscanf(input, "%*[\n]");
 
-    Record *r;
-    int i = 0;
-    for (i = 0; i < N_RECORDS; i++){
-        r = read_record(input);
+    Record *r = read_record(input);   // read record retorna NULL se acabou o arquivo
+    while (r != NULL){
         queue_insert(q, r);
+        r = read_record(input);
     }
 
     fclose(input);
@@ -250,12 +249,10 @@ void write_record(FILE *fp, Record *r, int *bytes, int *pages){
     int size = record_size(r);
     if ((*bytes + size)/(double)DISK_PG > 1){
         create_new_disk_page(fp, pages);
-        //printf("New disk page created\n");
         *bytes = 0;  // escreve 0 bytes na nova pagina de disco
     }
 
     *bytes += size;     // incrementa a qt. bytes escritos
-    //printf("%05d bytes written (size of record %03d)\n", *bytes, size);
     long long temp1 = -1;
 
     fwrite("-", sizeof(char), 1, fp);
@@ -296,19 +293,69 @@ void write_file_body(FILE *fp, Queue *q){
     }
 }
 
-void write_file(){
-    Queue *q = read_file();
+void write_file(char *file_name){
+    Queue *q = read_csv_file(file_name);
 
     FILE *fp = fopen("test.bin", "wb+");
     write_header(fp);
     write_file_body(fp, q);
-
-    //print_queue(q);
-    //print_binary_file(fp);
     queue_free(q);
+    // print_binary_file(fp);
+    fclose(fp);
+}
+
+Record *read_record_binary(FILE *fp){
+    int size, id;
+    char removed, telefone[15];
+    double salario;
+    long long index;
+
+    int start_pos = ftell(fp);
+
+    fread(&removed, sizeof(char), 1, fp);   // ler byte removido
+
+    fread(&size, sizeof(int), 1, fp);        // le tamanho
+    if (removed == '*'){
+        fseek(fp, (long)(size - 5), SEEK_CUR);
+        return NULL;
+    }
+
+
+    fread(&index, sizeof(long long), 1, fp); // le inicio da lista
+    fread(&id, sizeof(int), 1, fp);          // le id do funcionario
+    fread(&salario, sizeof(double), 1, fp);  // le salario
+    fread(telefone, sizeof(char), 14, fp);   // le telefone
+    telefone[14] = '\0';
+
+    int string_size;
+    char tag, nome[100], cargo[100];
+    memset(nome, '\0', sizeof(nome));
+    memset(cargo, '\0', sizeof(cargo));
+
+    while (ftell(fp) != start_pos + size){
+        fread(&string_size, sizeof(int), 1, fp);
+        fread(&tag, sizeof(char), 1, fp);
+        if (tag == 'n') fread(nome, sizeof(char), string_size, fp);
+        else fread(cargo, sizeof(char), string_size, fp);
+    }
+
+    return record_create(id, salario, telefone, nome, cargo);
+}
+
+void read_binary_file(char *file_name){
+    FILE *fp = fopen(file_name, "rb");
+    fseek(fp, (long)DISK_PG, SEEK_SET); // pula o cabeçalho
+
+    for (int i = 0; i < 1000; i++){
+        Record *r = read_record_binary(fp);
+        record_print(r);
+        record_free(r);
+    }
+
     fclose(fp);
 }
 
 int main(){
-    write_file();
+    //write_file("file.csv");
+    read_binary_file("test.bin");
 }

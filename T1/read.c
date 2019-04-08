@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Victor Giovannoni 10786159 */
+
 #define DISK_PG 32000
 #define TRASH '@'
 #define INVALID -1337
@@ -90,7 +92,7 @@ void queue_insert(Queue *q, Record *r){
 void create_new_disk_page(FILE *fp, int *pages){
     fseek(fp, (long)((*pages)*DISK_PG), SEEK_SET);    // posiciona o ptr no começo da proxima pagina
     char trash[DISK_PG + 1];
-    memset(trash, '@', sizeof(trash));
+    memset(trash, TRASH, sizeof(trash));
 
     fwrite(trash, sizeof(char), DISK_PG, fp);
     // VERIFICAR ERRO AQUI NO ++
@@ -140,7 +142,7 @@ void write_header(FILE *fp){
     long long temp = -1;
 
     char trash[DISK_PG + 1];
-    memset(trash, '@', sizeof(trash));
+    memset(trash, TRASH, sizeof(trash));
     fwrite(trash, sizeof(char), DISK_PG, fp);
     fseek(fp, (long)0, SEEK_SET);               // nova pagina de disco
 
@@ -287,7 +289,6 @@ void write_file_body(FILE *fp, Queue *q){
     int disk_pages = 2;
 
     while (cur != NULL){
-        // record_print(cur->record);
         write_record(fp, cur->record, &bytes_written, &disk_pages);
         cur = cur->next;
     }
@@ -295,17 +296,21 @@ void write_file_body(FILE *fp, Queue *q){
 
 void write_file(char *file_name){
     Queue *q = read_csv_file(file_name);
-    print_queue(q);
 
     FILE *fp = fopen("test.bin", "wb+");
     write_header(fp);
     write_file_body(fp, q);
     queue_free(q);
-    // print_binary_file(fp);
+    //print_binary_file(fp);
     fclose(fp);
 }
 
-Record *read_record_binary(FILE *fp, int *bytes_read, int *disk_page){
+int ceiling(double x){
+    if (x == (int)x) return (int)x;
+    return (int)x + 1;
+}
+
+Record *read_record_binary(FILE *fp, int *paginas){
     int size, id;
     char removed, telefone[15];
     double salario;
@@ -313,17 +318,23 @@ Record *read_record_binary(FILE *fp, int *bytes_read, int *disk_page){
 
     int start_pos = ftell(fp);
 
-    *bytes_read += sizeof(char) + sizeof(int);
     fread(&removed, sizeof(char), 1, fp);   // ler byte removido
 
-    fread(&size, sizeof(int), 1, fp);        // le tamanho
+    fread(&size, sizeof(int), 1, fp);       // le tamanho
     if (removed == '*'){
         fseek(fp, (long)(size - 5), SEEK_CUR);
         return NULL;
+    } else if (removed != '-'){         // pular pra proxima pagina de disco
+        (*paginas)++;
+        long current_pos = ftell(fp);
+        int pagina_atual = 1 + ceiling(current_pos/(double)DISK_PG);
+
+        int end = fseek(fp, (long)pagina_atual*DISK_PG, SEEK_SET);
+        if (end == -1) return (Record *)0x01;
+        return NULL;
     }
 
-    *bytes_read += sizeof(long long) + sizeof(int) + sizeof(double) + 14*sizeof(char);
-    
+
     fread(&index, sizeof(long long), 1, fp); // le inicio da lista
     fread(&id, sizeof(int), 1, fp);          // le id do funcionario
     fread(&salario, sizeof(double), 1, fp);  // le salario
@@ -340,8 +351,6 @@ Record *read_record_binary(FILE *fp, int *bytes_read, int *disk_page){
         fread(&tag, sizeof(char), 1, fp);
         if (tag == 'n') fread(nome, sizeof(char), string_size, fp);
         else fread(cargo, sizeof(char), string_size, fp);
-
-        *bytes_read += sizeof(int) + sizeof(char) + string_size*sizeof(char);
     }
 
     return record_create(id, salario, telefone, nome, cargo);
@@ -351,15 +360,16 @@ void read_binary_file(char *file_name){
     FILE *fp = fopen(file_name, "rb");
     fseek(fp, (long)DISK_PG, SEEK_SET); // pula o cabeçalho
 
-    int disk_page = 2;
-    int bytes_read = 0;
+    int paginas = 2;
+    for (int i = 0;  ; i++){
+        Record *r = read_record_binary(fp, &paginas); // retorna 0x01 quando acaba o arquivo
+        if (r == (Record *)0x01) break;
 
-    for (int i = 0; i < 1000; i++){
-        Record *r = read_record_binary(fp, &bytes_read, &disk_page);
         record_print(r);
         record_free(r);
     }
 
+    printf("Numero de paginas de disco acessadas: %d\n", paginas);
     fclose(fp);
 }
 

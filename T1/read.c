@@ -105,13 +105,13 @@ Record *read_record(FILE *fp){
 
     fscanf(fp, "%d", &id);
     fscanf(fp, "%*c");
-    fscanf(fp, "%[^,]", telefone);
-    fscanf(fp, "%*c");
     fscanf(fp, "%lf", &salario);
     fscanf(fp, "%*c");
-    fscanf(fp, "%[^,]", cargo);
+    fscanf(fp, "%[^,]", telefone);
     fscanf(fp, "%*c");
-    fscanf(fp, "%[^\r\n]", nome);
+    fscanf(fp, "%[^,]", nome);
+    fscanf(fp, "%*c");
+    fscanf(fp, "%[^\r\n]", cargo);
     fscanf(fp, "%*[\r\n]");
 
 
@@ -200,6 +200,10 @@ void flip_safety_bit(FILE *fp){
 
 Queue *read_csv_file(char *file_name){
     FILE *input = fopen(file_name, "r");
+    if (input == NULL){
+        printf("Falha no carregamento do arquivo.");
+        exit(0);
+    }
     Queue *q = queue_create();
 
     fscanf(input, "%*[^\n]");  // pula a primeira linha do csv
@@ -321,7 +325,12 @@ void write_file(char *file_name){
     Queue *q = read_csv_file(file_name);
 
     FILE *fp = fopen("arquivoTrab1.bin", "wb+");
-    write_header(fp, "file.csv");
+    if (fp == NULL){
+        printf("Falha no carregamento do arquivo.");
+        exit(0);
+    }
+
+    write_header(fp, file_name);
     write_file_body(fp, q);
     queue_free(q);
     fclose(fp);
@@ -338,11 +347,11 @@ Record *read_record_binary(FILE *fp, int *paginas){
     double salario;
     long long index;
 
-    int start_pos = ftell(fp);
 
     fread(&removed, sizeof(char), 1, fp);   // ler byte removido
-
     fread(&size, sizeof(int), 1, fp);       // le tamanho
+    int start_pos = ftell(fp);
+
     if (removed == '*'){
         fseek(fp, (long)(size), SEEK_CUR);
         return NULL;
@@ -372,30 +381,69 @@ Record *read_record_binary(FILE *fp, int *paginas){
         fread(&string_size, sizeof(int), 1, fp);
         fread(&tag, sizeof(char), 1, fp);
         if (tag == 'n') fread(nome, sizeof(char), string_size, fp);
-        else fread(cargo, sizeof(char), string_size, fp);
+        else if (tag == 'c') fread(cargo, sizeof(char), string_size, fp);
+        else break; // chegou no fim do registro
     }
 
     return record_create(id, salario, telefone, nome, cargo);
 }
 
+int safety_byte(FILE *fp){
+    int byte;
+    fseek(fp, 0L, SEEK_SET);
+    fread(&byte, sizeof(int), 1, fp);
+    return byte;
+}
+
+void record_ugly_print(Record *r){
+    if (r == NULL) return;
+
+    printf("%d ", r->idServidor);
+    printf("%.2lf ", r->salarioServidor);
+    printf("%-14s ", r->telefoneServidor);
+
+    if (r->nomeServidor[0] != '\0') printf("%d %s ", strlen(r->nomeServidor), r->nomeServidor);
+    if (r->cargoServidor[0] != '\0') printf("%d %s", strlen(r->cargoServidor), r->cargoServidor);
+    putchar('\n');
+
+}
+
 void read_binary_file(char *file_name){
+
     FILE *fp = fopen(file_name, "rb");
+    if (fp == NULL || safety_byte(fp) == 0){
+        printf("Falha no carregamento do arquivo.");
+        exit(0);
+    }
+
+    // char tag1[41], tag2[41], tag3[41], tag4[41], tag5[41];  // leio a tag e o descritor. tag[0] = caracter que a define
+    // fseek(fp, (long)9, SEEK_SET);
+    // fread(tag1, sizeof(char), 40, fp);
+    // fread(tag2, sizeof(char), 40, fp);
+    // fread(tag3, sizeof(char), 40, fp);
+    // fread(tag4, sizeof(char), 40, fp);
+    // fread(tag5, sizeof(char), 40, fp);
+
     fseek(fp, (long)DISK_PG, SEEK_SET); // pula o cabeçalho
 
-    int paginas = 2;
-    for (int i = 0;  ; i++){
+    int paginas = 2, i;
+    for (i = 0;  ; i++){
         Record *r = read_record_binary(fp, &paginas); // retorna 0x01 quando acaba o arquivo
         if (r == (Record *)0x01) break;
 
-        record_print(r);
+        record_ugly_print(r);
         record_free(r);
     }
+    if (i == 0){
+        printf("Registro inexistente.");
+        exit(0);
+    }
 
-    printf("Numero de paginas de disco acessadas: %d\n", paginas);
+    printf("Numero de paginas de disco acessadas: %d\n", ceiling(ftell(fp)/(double)DISK_PG));
     fclose(fp);
 }
 
 int main(){
-   write_file("file.csv");
-   //read_binary_file("test.bin");
+   //write_file("file.csv");
+   read_binary_file("arquivoTrab1.bin");
 }

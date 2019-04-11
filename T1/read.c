@@ -398,8 +398,11 @@ int safety_byte(FILE *fp){
 void record_ugly_print(Record *r){
     if (r == NULL) return;
 
-    printf("%d ", r->idServidor);
-    printf("%.2lf ", r->salarioServidor);
+    printf("-4%d ", r->idServidor);
+
+    if (r->salarioServidor == -1) printf("         ");
+    else printf("%-8.2lf ", r->salarioServidor);
+
     printf("%-14s ", r->telefoneServidor);
 
     if (r->nomeServidor[0] != '\0') printf("%d %s ", strlen(r->nomeServidor), r->nomeServidor);

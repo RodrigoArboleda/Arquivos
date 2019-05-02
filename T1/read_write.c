@@ -70,16 +70,37 @@ int is_removed(FILE *fp){
     return removed != '-';
 }
 
-/* Dado fp no início do registro,marca-oc omo removido. Não altera o fp */
+/* Dado fp no início do registro,marca-oc omo removido e preenche com lixo. Não altera o fp */
 void set_removed(FILE *fp){
+    int size;
     fwrite("*", sizeof(char), 1, fp);
-    fseek(fp, -1L, SEEK_CUR);
+    fread(&size, sizeof(int), 1, fp);
+
+    char trash[1000];
+    memset(trash, TRASH, sizeof(trash));
+    fwrite(trash, sizeof(char), size, fp);
 }
 
 /* Impressão do registro p/ debug */
 void record_print(Record *r){
     if (r == NULL) return;
     printf("%08d  |  %-14s  |  %-9.2lf  |  %-40s  |  %-30s\n", r->idServidor, r->telefoneServidor, r->salarioServidor, r->cargoServidor, r->nomeServidor);
+}
+
+/* dado o fp no começo do registro, ele pula para o próximo começo de registro, pulando registros removidos */
+void skip_record(FILE *fp){
+    char removed;
+    int record_size;
+
+    fread(&removed, sizeof(char), 1, fp);
+    do {
+        fread(&record_size, sizeof(int), 1, fp);
+        fseek(fp, (long)record_size, SEEK_CUR);
+
+        fread(&removed, sizeof(char), 1, fp);
+    } while (!feof(fp) && removed != '-');
+
+    if (!feof(fp)) fseek(fp, -1L, SEEK_CUR);   // volta p/ byte de rmeovido, inicio do registro
 }
 
 /* Le e retorna registro do arquivo csv apontado por fp */
@@ -370,11 +391,14 @@ void read_binary_file(char *file_name){
     /* percorre o arquivo lendo os registros e imprimindo */
     int i;
     for (i = 0; !feof(fp); i++){
-        Record *r = read_record_binary(fp);     // retorna NNULL quando acaba o arquivo
-        if (r == NULL) break;
+        if (!is_removed(fp)){
+            Record *r = read_record_binary(fp);     // retorna NNULL quando acaba o arquivo
+            if (r == NULL) break;
 
-        record_ugly_print(r);
-        record_free(r);
+            record_ugly_print(r);
+            record_free(r);
+        }
+        else skip_record(fp);
     }
     if (i == 0){
         printf("Registro inexistente.\n");
@@ -517,22 +541,6 @@ int compare_job(FILE *fp, void *key, char tag, int *finished){
 
     fseek(fp, start_pos, SEEK_SET); // retorna p/ posicao inicial
     return !strcmp(record_job, key_job);
-}
-
-/* dado o fp no começo do registro, ele pula para o próximo começo de registro, pulando registros removidos */
-void skip_record(FILE *fp){
-    char removed;
-    int record_size;
-
-    fread(&removed, sizeof(char), 1, fp);
-    do {
-        fread(&record_size, sizeof(int), 1, fp);
-        fseek(fp, (long)record_size, SEEK_CUR);
-
-        fread(&removed, sizeof(char), 1, fp);
-    } while (!feof(fp) && removed != '-');
-
-    if (!feof(fp)) fseek(fp, -1L, SEEK_CUR);   // volta p/ byte de rmeovido, inicio do registro
 }
 
 /* função que imprime no formato da funcionalidade 3 */
@@ -707,7 +715,7 @@ void print_list(FILE *fp){
 void remove_record(FILE *fp){
     if (feof(fp) || is_removed(fp)) return;
     /* Remove o registro do arquivo e adiciona o fseek dele na lista ordenada */
-    set_removed(fp);    // marca como logicamente removido
+    set_removed(fp);    // marca como logicamente removido, preenchendo com lixo
 
     long long removed_offset = ftell(fp);
     int removed_size = get_record_size(fp);
@@ -779,7 +787,7 @@ void remove_records(char *filename){
         printf("Falha no processamento do arquivo.\n");
         exit(0);
     }
-    // set_safety_byte(fp, '0');   // atualiza byte de integridade
+    set_safety_byte(fp, '0');   // atualiza byte de integridade
 
     char tags[5][41];  // leio a tag e o descritor. tag[i][0] = caracter que define a i-ésima tag
 
@@ -800,7 +808,6 @@ void remove_records(char *filename){
         if (!strcmp(field_name, "idServidor")){
             scanf("%d", &id);
             search_records_routine(fp, compare_id, remove_record, &id, tags[0][0]);
-            // printf("%-17s %d\n", field_name, id);
         }
         if (!strcmp(field_name, "salarioServidor")){
             scanf("%lf", &salario);
@@ -809,21 +816,18 @@ void remove_records(char *filename){
         if (!strcmp(field_name, "telefoneServidor")){
             scanf("\"%[^\"]%*c*c", value);
             search_records_routine(fp, compare_phone, remove_record, value, tags[2][0]);
-            // printf("%-17s %s\n", field_name, value);
         }
         if (!strcmp(field_name, "nomeServidor")){
             scanf("\"%[^\"]%*c*c", value);
             search_records_routine(fp, compare_name, remove_record, value, tags[3][0]);
-            // printf("%-17s %s\n", field_name, value);
         }
         if (!strcmp(field_name, "cargoServidor")){
             scanf("\"%[^\"]%*c*c", value);
             search_records_routine(fp, compare_job, remove_record, value, tags[4][0]);
-            // printf("%-17s %s\n", field_name, value);
         }
     }
 
-    print_list(fp);
+    // print_list(fp);
     set_safety_byte(fp, '1');
     fclose(fp);
 }

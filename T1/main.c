@@ -20,5 +20,8 @@ int main(){
         case 3:
             search_binary_file(filename);
             break;
+        case 4:
+            remove_records(filename);
+            break;
     }
 }

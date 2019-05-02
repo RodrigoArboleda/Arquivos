@@ -9,4 +9,6 @@ void read_binary_file(char *filename);
 
 void search_binary_file(char *filename);
 
+void remove_records(char *filename);
+
 #endif

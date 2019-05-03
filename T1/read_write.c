@@ -383,7 +383,6 @@ void record_ugly_print(Record *r){
     if (r->nomeServidor[0] != '\0') printf("%d %s ", (int)strlen(r->nomeServidor), r->nomeServidor);
     if (r->cargoServidor[0] != '\0') printf("%d %s", (int)strlen(r->cargoServidor), r->cargoServidor);
     putchar('\n');
-
 }
 
 /* Função principal da funcionalidade 2 */
@@ -424,8 +423,6 @@ void read_binary_file(char *file_name){
     Coloca finished p/ 1 caso encontre a chave
 */
 int compare_id(FILE *fp, void *key, char tag, int *finished){
-    if (is_removed(fp)) return 0;   // verifica se o registro foi removido
-
     long start_pos = ftell(fp);
     int record_size;
 
@@ -567,7 +564,6 @@ void record_print_tags(Record *r, char tags[][41]){
 
     if (r->cargoServidor[0] != '\0') printf("%s: %s\n\n", 1 + tags[4], r->cargoServidor);
     else printf("%s: valor nao declarado\n\n", 1 + tags[4]);
-
 }
 
 /* Essa função busca os registros pela chave key, acessando e comparando o campo determinado por compare_function */
@@ -680,11 +676,12 @@ long long get_next_offset(FILE *fp){
 
 /* Função que, dado fp no início do registro, altera o byte offset do próximo registro na lista sem alterar o fp */
 void set_next_offset(FILE *fp, long long new){
-    
-    fseek(fp, 5L, SEEK_CUR);
-    fwrite(&new, sizeof(long long), 1, fp);
-    fseek(fp, -13L, SEEK_CUR);
-
+    if (ftell(fp) == 1) fwrite(&new, sizeof(long long), 1, fp);
+    else {
+        fseek(fp, 5L, SEEK_CUR);
+        fwrite(&new, sizeof(long long), 1, fp);
+        fseek(fp, -13L, SEEK_CUR); 
+    }
 }
 
 /* Função que dado fp no início de um registro, retorna o tamanho do registro sem alterar o fp */
@@ -741,16 +738,8 @@ void remove_record(FILE *fp){
     long long previous_offset;
     int current_size;
 
-    fseek(fp, next_offset, SEEK_SET);
-    current_size = get_record_size(fp);
-    if (removed_size < current_size){        // insere no inúcio
-        set_list_start(fp, removed_offset); // inicio vira o novo registro
-        fseek(fp, removed_offset, SEEK_SET);
-        set_next_offset(fp, next_offset);    // proximo vira o ex-primeiro registro
-        return;
-    }
+    fseek(fp, 1L, SEEK_SET);
 
-    next_offset = get_next_offset(fp);
     while (next_offset != -1){
         previous_offset = ftell(fp);
         fseek(fp, next_offset, SEEK_SET);
@@ -763,7 +752,7 @@ void remove_record(FILE *fp){
 
             fseek(fp, removed_offset, SEEK_SET);
             set_next_offset(fp, next_offset);  // removido aponta p/ o proximo
-            break;
+            return;
         }
         next_offset = get_next_offset(fp);
     }
@@ -775,12 +764,13 @@ void remove_record(FILE *fp){
     }
 }
 
-void search_records_routine(FILE *fp, int (*compare_function)(FILE *fp, void *key, char tag, int *removed), void (*what_to_do)(FILE *fp), void *key, char tag){
+void search_records_routine(FILE *fp, int (*compare_function)(FILE *fp, void *key, char tag, int *finished), void (*what_to_do)(FILE *fp), void *key, char tag){
     fseek(fp, (long)DISK_PG, SEEK_SET);
 
+    int finished = 0;
     long long start_pos;
-    for (int i = 0; !feof(fp); i++){
-        if (compare_function(fp, key, tag, NULL)){
+    for (int i = 0; !feof(fp) && !finished; i++){
+        if (compare_function(fp, key, tag, &finished)){
             start_pos = ftell(fp);
             what_to_do(fp);
             fseek(fp, start_pos, SEEK_SET); // volta p/ começo do registro analisado, depois o pula
@@ -844,8 +834,7 @@ void remove_records(char *filename){
         }
     }
 
-    //binarioNaTela1(fp);
+    binarioNaTela1(fp);
     set_safety_byte(fp, '1');
     fclose(fp);
-
 }

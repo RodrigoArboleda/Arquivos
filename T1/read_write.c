@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "read_write.h"
+#include "escrevernatela.h"
 
 /* Victor Giovannoni 10786159 */
 /* OBS: Em alguns comentários, quando digo que a função não altera o fp,
@@ -11,6 +12,7 @@
 #define DISK_PG 32000
 #define TRASH '@'
 #define INVALID -1337
+#define DEBUG 1
 
 typedef struct record_ Record;
 
@@ -70,15 +72,17 @@ int is_removed(FILE *fp){
     return removed != '-';
 }
 
-/* Dado fp no início do registro,marca-oc omo removido e preenche com lixo. Não altera o fp */
+/* Dado fp no início do registro,marca-oc omo removido e preenche com lixo.
+    Não preenche o campo de próximo offset nem de tamanho. Não altera o fp */
 void set_removed(FILE *fp){
     int size;
     fwrite("*", sizeof(char), 1, fp);
     fread(&size, sizeof(int), 1, fp);
+    fseek(fp, sizeof(long long), SEEK_CUR);
 
     char trash[1000];
     memset(trash, TRASH, sizeof(trash));
-    fwrite(trash, sizeof(char), size, fp);
+    fwrite(trash, sizeof(char), size - sizeof(long long), fp);
 }
 
 /* Impressão do registro p/ debug */
@@ -700,12 +704,12 @@ void print_record_from_fp(FILE *fp){
 void print_list(FILE *fp){
     long start_pos = ftell(fp);
 
-    long long next_offset = get_list_start(fp);
+    unsigned long long next_offset = get_list_start(fp);
+    printf("TOPO LISTA: %ld\n", (long)next_offset);
     while (next_offset != -1){
         fseek(fp, next_offset, SEEK_SET);
-        printf("(%03d) ", get_record_size(fp));
-        print_record_from_fp(fp);
         next_offset = get_next_offset(fp);
+        printf("(%03d) : %07ld -> %07ld\n", get_record_size(fp), ftell(fp), (unsigned long)next_offset);
     }
 
     fseek(fp, start_pos, SEEK_SET);
@@ -787,7 +791,13 @@ void remove_records(char *filename){
         printf("Falha no processamento do arquivo.\n");
         exit(0);
     }
-    set_safety_byte(fp, '0');   // atualiza byte de integridade
+
+    if (DEBUG){
+        print_list(fp);
+        return;
+    }
+
+    // set_safety_byte(fp, '0');   // atualiza byte de integridade
 
     char tags[5][41];  // leio a tag e o descritor. tag[i][0] = caracter que define a i-ésima tag
 
@@ -814,20 +824,21 @@ void remove_records(char *filename){
             search_records_routine(fp, compare_salary, remove_record, &salario, tags[1][0]);
         }
         if (!strcmp(field_name, "telefoneServidor")){
-            scanf("\"%[^\"]%*c*c", value);
+            scan_quote_string(value);
             search_records_routine(fp, compare_phone, remove_record, value, tags[2][0]);
         }
         if (!strcmp(field_name, "nomeServidor")){
-            scanf("\"%[^\"]%*c*c", value);
+            scan_quote_string(value);
             search_records_routine(fp, compare_name, remove_record, value, tags[3][0]);
         }
         if (!strcmp(field_name, "cargoServidor")){
-            scanf("\"%[^\"]%*c*c", value);
+            scan_quote_string(value);
             search_records_routine(fp, compare_job, remove_record, value, tags[4][0]);
         }
     }
 
-    // print_list(fp);
+    //binarioNaTela1(fp);
     set_safety_byte(fp, '1');
     fclose(fp);
+
 }

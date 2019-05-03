@@ -14,6 +14,7 @@
 #define INVALID -1337
 #define DEBUG 1
 
+
 typedef struct record_ Record;
 
 struct record_{
@@ -75,6 +76,8 @@ int is_removed(FILE *fp){
 /* Dado fp no início do registro,marca-oc omo removido e preenche com lixo.
     Não preenche o campo de próximo offset nem de tamanho. Não altera o fp */
 void set_removed(FILE *fp){
+    long long start = ftell(fp);
+
     int size;
     fwrite("*", sizeof(char), 1, fp);
     fread(&size, sizeof(int), 1, fp);
@@ -83,6 +86,8 @@ void set_removed(FILE *fp){
     char trash[1000];
     memset(trash, TRASH, sizeof(trash));
     fwrite(trash, sizeof(char), size - sizeof(long long), fp);
+
+    fseek(fp, start, SEEK_SET);
 }
 
 /* Impressão do registro p/ debug */
@@ -675,9 +680,11 @@ long long get_next_offset(FILE *fp){
 
 /* Função que, dado fp no início do registro, altera o byte offset do próximo registro na lista sem alterar o fp */
 void set_next_offset(FILE *fp, long long new){
+    
     fseek(fp, 5L, SEEK_CUR);
     fwrite(&new, sizeof(long long), 1, fp);
     fseek(fp, -13L, SEEK_CUR);
+
 }
 
 /* Função que dado fp no início de um registro, retorna o tamanho do registro sem alterar o fp */

@@ -12,14 +12,14 @@
 #define DISK_PG 32000
 #define TRASH '@'
 #define INVALID -1337
-#define DEBUG 1
-
+#define DEBUG 0
+#define MAX_SIZE 100
 
 typedef struct record_ Record;
 
 struct record_{
-    char nomeServidor[100];
-    char cargoServidor[100];
+    char nomeServidor[MAX_SIZE];
+    char cargoServidor[MAX_SIZE];
     char telefoneServidor[15];
     double salarioServidor;
     int idServidor;
@@ -116,7 +116,7 @@ void skip_record(FILE *fp){
 Record *read_record(FILE *fp){
     int id = INVALID;
     double salario = INVALID;
-    char telefone[15], nome[100], cargo[100];
+    char telefone[15], nome[MAX_SIZE], cargo[MAX_SIZE];
     memset(telefone, '\0', sizeof(telefone));
     memset(nome, '\0', sizeof(nome));
     memset(cargo, '\0', sizeof(cargo));
@@ -223,7 +223,7 @@ int bytes_until_new_page(FILE *fp){
     return DISK_PG - ftell(fp)%DISK_PG;
 }
 
-/* Escreve um único registro  */
+/* Escreve um único registro considerando fp como início */
 void write_record(FILE *fp, Record *r, int last_record){
     int size = record_size(r);
 
@@ -231,6 +231,7 @@ void write_record(FILE *fp, Record *r, int last_record){
     int bytes_written = ftell(fp)%DISK_PG;
 
     if ((bytes_written + size)/(double)DISK_PG > 1){
+        printf("ESCREVENDO NOVA PAGINA DE DISCO\n");
         int trash_amount = bytes_until_new_page(fp);
 
         char trash[DISK_PG];
@@ -350,7 +351,7 @@ Record *read_record_binary(FILE *fp){
     telefone[14] = '\0';
 
     int string_size;
-    char tag, nome[100], cargo[100];
+    char tag, nome[MAX_SIZE], cargo[MAX_SIZE];
     memset(nome, '\0', sizeof(nome));
     memset(cargo, '\0', sizeof(cargo));
 
@@ -423,6 +424,7 @@ void read_binary_file(char *file_name){
     Coloca finished p/ 1 caso encontre a chave
 */
 int compare_id(FILE *fp, void *key, char tag, int *finished){
+    if (is_removed(fp)) return 0;
     long start_pos = ftell(fp);
     int record_size;
 
@@ -503,9 +505,9 @@ int compare_name(FILE *fp, void *key, char tag, int *finished){
         fread(&record_tag, sizeof(char), 1, fp);
     } while (ftell(fp) <= start_pos + record_size && record_tag != tag);
 
-    if (ftell(fp) > start_pos + record_size){
+    if (ftell(fp) > start_pos + record_size){   // nao tem nome
         fseek(fp, start_pos, SEEK_SET); // retorna p/ posicao inicial
-        return 0;
+        return key_name[0] == '\0';
     }
 
     char record_name[300];
@@ -589,7 +591,7 @@ void search_records(FILE *fp, int (*compare_function)(FILE *fp, void *key, char 
 
 /* Função principal da funcionalidade 3. File_name é o binário a ser lido */
 void search_binary_file(char *file_name){
-    char field_name[100];
+    char field_name[MAX_SIZE];
     scanf("%s ", field_name);
 
 
@@ -627,13 +629,13 @@ void search_binary_file(char *file_name){
         search_records(fp, compare_phone, field_value, tags[2][0], tags);
     }
     if (!strcmp(field_name, "nomeServidor")){
-        char field_value[100];
+        char field_value[MAX_SIZE];
         scanf("%[^\r\n]", field_value); // quase um dia de debug pra achar esse \r
 
         search_records(fp, compare_name, field_value, tags[3][0], tags);
     }
     if (!strcmp(field_name, "cargoServidor")){
-        char field_value[100];
+        char field_value[MAX_SIZE];
         scanf("%[^\r\n]", field_value); // quase um dia de debug pra achar esse \r
 
         search_records(fp, compare_job, field_value, tags[4][0], tags);
@@ -680,7 +682,7 @@ void set_next_offset(FILE *fp, long long new){
     else {
         fseek(fp, 5L, SEEK_CUR);
         fwrite(&new, sizeof(long long), 1, fp);
-        fseek(fp, -13L, SEEK_CUR); 
+        fseek(fp, -13L, SEEK_CUR);
     }
 }
 
@@ -794,7 +796,7 @@ void remove_records(char *filename){
         return;
     }
 
-    // set_safety_byte(fp, '0');   // atualiza byte de integridade
+    set_safety_byte(fp, '0');   // atualiza byte de integridade
 
     char tags[5][41];  // leio a tag e o descritor. tag[i][0] = caracter que define a i-ésima tag
 
@@ -808,7 +810,7 @@ void remove_records(char *filename){
 
     int id;
     double salario;
-    char field_name[20], value[100];
+    char field_name[20], value[MAX_SIZE];
     for (int i = 0; i < n; i++){
         scanf("%s%*c", field_name);
 
@@ -817,7 +819,7 @@ void remove_records(char *filename){
             search_records_routine(fp, compare_id, remove_record, &id, tags[0][0]);
         }
         if (!strcmp(field_name, "salarioServidor")){
-            scanf("%lf", &salario);
+            salario = le_salario(); // funcao que contabiliza valor nulo (está no outro .h)
             search_records_routine(fp, compare_salary, remove_record, &salario, tags[1][0]);
         }
         if (!strcmp(field_name, "telefoneServidor")){
@@ -834,7 +836,112 @@ void remove_records(char *filename){
         }
     }
 
-    binarioNaTela1(fp);
     set_safety_byte(fp, '1');
+    binarioNaTela1(fp);
+    fclose(fp);
+}
+
+Record *read_record_stdin(){
+    int id;
+    double salario;
+    char tel[15], nome[MAX_SIZE], cargo[MAX_SIZE];
+
+    scanf("%d", &id);
+    salario = le_salario();
+    scan_quote_string(tel);
+    scan_quote_string(nome);
+    scan_quote_string(cargo);
+
+    return record_create(id, salario, tel, nome, cargo);
+}
+
+/* Coloca fp no final do ultimo registro e retorna offset do início do último registro */
+long long goto_last_record(FILE *fp){
+    fseek(fp, DISK_PG, SEEK_SET);
+
+    long long last_offset;
+    while (!feof(fp)){
+        last_offset = ftell(fp);
+        skip_record(fp);
+    }
+    return last_offset;
+}
+
+void insert_record(FILE *fp, Record *r){
+    long start_pos = ftell(fp);
+
+    fseek(fp, 1L, SEEK_SET);
+
+    long long next_offset = get_list_start(fp);
+    long long previous_offset = 1;  // começa offset do topo da lista, caso remova o primeiro
+
+    if (next_offset == -1){                         // lista avazia, insiro no final do arquivo
+        long long last_offset = goto_last_record(fp);         // coloca fp no final do ulrimo registro e retorna o inicio do reg. p/ last_offset
+        write_record(fp, r, last_offset);
+    }
+
+    int insert_size = record_size(r);
+    int current_size;
+
+    while (next_offset != -1){
+        previous_offset = ftell(fp);
+        fseek(fp, next_offset, SEEK_SET);
+
+        current_size = get_record_size(fp);
+        next_offset = get_next_offset(fp);
+
+        if (current_size >= insert_size){   // insere e remove espaço vago da lista
+            write_record(fp, r, ftell(fp)); // escreve o registro
+            fseek(fp, previous_offset, SEEK_SET);
+            set_next_offset(fp, next_offset);   // faz atual->anterior apontar p/ atual->prox
+
+            fseek(fp, start_pos, SEEK_SET);
+            return;
+        }
+    }
+
+    if (next_offset == -1){         // escreve no final, já que nao tem espaço disponível
+        long long last_offset = goto_last_record(fp);         // coloca fp no final do ulrimo registro e retorna o inicio do reg. p/ last_offset
+        write_record(fp, r, last_offset);
+    }
+
+    fseek(fp, start_pos, SEEK_SET);
+}
+
+void insert_records(char *filename){
+    int n;
+    scanf("%d", &n);
+
+    FILE *fp = fopen(filename, "rb+");
+    if (fp == NULL || safety_byte(fp) == '0'){
+        printf("Falha no processamento do arquivo.\n");
+        exit(0);
+    }
+
+    if (DEBUG){
+        print_list(fp);
+        return;
+    }
+
+    // set_safety_byte(fp, '0');   // atualiza byte de integridade
+
+    char tags[5][41];  // leio a tag e o descritor. tag[i][0] = caracter que define a i-ésima tag
+
+    /* le os metadados do cabeçalho */
+    fseek(fp, (long)9, SEEK_SET);
+    fread(tags[0], sizeof(char), 41, fp);
+    fread(tags[1], sizeof(char), 41, fp);
+    fread(tags[2], sizeof(char), 41, fp);
+    fread(tags[3], sizeof(char), 41, fp);
+    fread(tags[4], sizeof(char), 41, fp);
+
+    for (int i = 0; i < n; i++){
+        Record *r = read_record_stdin();
+        insert_record(fp, r);
+        record_free(r);
+    }
+
+    set_safety_byte(fp, '1');
+    // binarioNaTela1(fp);
     fclose(fp);
 }

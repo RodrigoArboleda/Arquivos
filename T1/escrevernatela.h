@@ -11,4 +11,6 @@ void binarioNaTela1(FILE *ponteiroArquivoBinario);
 
 void scan_quote_string(char *str);
 
+double le_salario();
+
 #endif

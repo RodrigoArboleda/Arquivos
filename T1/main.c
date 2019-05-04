@@ -23,5 +23,8 @@ int main(){
         case 4:
             remove_records(filename);
             break;
+        case 5:
+            insert_records(filename);
+            break;
     }
 }

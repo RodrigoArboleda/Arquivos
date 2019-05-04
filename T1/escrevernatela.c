@@ -59,3 +59,10 @@ void scan_quote_string(char *str) {
 		strcpy(str, "");
 	}
 }
+
+double le_salario(){
+	char sal_str[20];
+	scanf("%s", sal_str);
+	if (sal_str[0] == 'N' || sal_str[0] == 'n') return -1;
+	return atof(sal_str);
+}

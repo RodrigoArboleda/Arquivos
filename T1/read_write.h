@@ -11,4 +11,6 @@ void search_binary_file(char *filename);
 
 void remove_records(char *filename);
 
+void insert_records(char *filename);
+
 #endif

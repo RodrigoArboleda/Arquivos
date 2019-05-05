@@ -223,15 +223,17 @@ int bytes_until_new_page(FILE *fp){
     return DISK_PG - ftell(fp)%DISK_PG;
 }
 
-/* Escreve um único registro considerando fp como início */
-void write_record(FILE *fp, Record *r, int last_record){
+/* Escreve um único registro considerando fp como início.
+    is_writing_size determina se vai escrever o tamanho do
+    novo registro ou se mantém igual (logicamente removido)
+*/
+void write_record(FILE *fp, Record *r, int last_record, int is_writing_size){
     int size = record_size(r);
 
     int pages = ceiling(ftell(fp)/(double)DISK_PG);
     int bytes_written = ftell(fp)%DISK_PG;
 
     if ((bytes_written + size)/(double)DISK_PG > 1){
-        printf("ESCREVENDO NOVA PAGINA DE DISCO\n");
         int trash_amount = bytes_until_new_page(fp);
 
         char trash[DISK_PG];
@@ -252,10 +254,9 @@ void write_record(FILE *fp, Record *r, int last_record){
     long long temp1 = -1;
     size -= 5;  /* desconsidero os 5 primeiros bytes pra escrever no registro */
 
-    char removed[2] = "-";
-
-    fwrite(removed, sizeof(char), 1, fp);
-    fwrite(&size, sizeof(int), 1, fp);              // tamanho do registro
+    fwrite("-", sizeof(char), 1, fp);
+    if (is_writing_size) fwrite(&size, sizeof(int), 1, fp);
+    else fseek(fp, 4L, SEEK_CUR);                   // pula se nao for escrever
     fwrite(&temp1, sizeof(long long), 1, fp);       // encadeamento
     fwrite(&(r->idServidor), sizeof(int), 1, fp);
     fwrite(&(r->salarioServidor), sizeof(double), 1, fp);
@@ -287,7 +288,7 @@ void write_file_body(FILE *fp, FILE *source_csv){
 
     Record *r = read_record(source_csv);
     while (!feof(fp) && r != NULL){
-        write_record(fp, r, last_record);
+        write_record(fp, r, last_record, 1);
         record_free(r);
         last_record = current_record;
 
@@ -877,7 +878,9 @@ void insert_record(FILE *fp, Record *r){
 
     if (next_offset == -1){                         // lista avazia, insiro no final do arquivo
         long long last_offset = goto_last_record(fp);         // coloca fp no final do ulrimo registro e retorna o inicio do reg. p/ last_offset
-        write_record(fp, r, last_offset);
+        write_record(fp, r, last_offset, 1);
+        fseek(fp, start_pos, SEEK_SET);
+        return;
     }
 
     int insert_size = record_size(r);
@@ -891,7 +894,7 @@ void insert_record(FILE *fp, Record *r){
         next_offset = get_next_offset(fp);
 
         if (current_size >= insert_size){   // insere e remove espaço vago da lista
-            write_record(fp, r, ftell(fp)); // escreve o registro
+            write_record(fp, r, ftell(fp), 0); // escreve o registro
             fseek(fp, previous_offset, SEEK_SET);
             set_next_offset(fp, next_offset);   // faz atual->anterior apontar p/ atual->prox
 
@@ -902,7 +905,7 @@ void insert_record(FILE *fp, Record *r){
 
     if (next_offset == -1){         // escreve no final, já que nao tem espaço disponível
         long long last_offset = goto_last_record(fp);         // coloca fp no final do ulrimo registro e retorna o inicio do reg. p/ last_offset
-        write_record(fp, r, last_offset);
+        write_record(fp, r, last_offset, 1);
     }
 
     fseek(fp, start_pos, SEEK_SET);
@@ -923,7 +926,7 @@ void insert_records(char *filename){
         return;
     }
 
-    // set_safety_byte(fp, '0');   // atualiza byte de integridade
+    set_safety_byte(fp, '0');   // atualiza byte de integridade
 
     char tags[5][41];  // leio a tag e o descritor. tag[i][0] = caracter que define a i-ésima tag
 
@@ -942,6 +945,6 @@ void insert_records(char *filename){
     }
 
     set_safety_byte(fp, '1');
-    // binarioNaTela1(fp);
+    binarioNaTela1(fp);
     fclose(fp);
 }

@@ -5,7 +5,7 @@
 
 int main(){
     int option;
-    char filename[100];
+    char filename[30];
 
     scanf("%d", &option);
     scanf("%s", filename);
@@ -25,6 +25,9 @@ int main(){
             break;
         case 5:
             insert_records(filename);
+            break;
+        case 6:
+            update_records(filename);
             break;
     }
 }

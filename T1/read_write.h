@@ -13,4 +13,6 @@ void remove_records(char *filename);
 
 void insert_records(char *filename);
 
+void update_records(char *filename);
+
 #endif

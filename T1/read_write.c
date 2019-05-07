@@ -43,7 +43,6 @@ void record_free(Record *r){
     free(r);
 }
 
-
 int ceiling(double x){
     if (x == (int)x) return (int)x; // pega arredondamento pq cima de x
     return (int)x + 1;
@@ -223,17 +222,30 @@ int bytes_until_new_page(FILE *fp){
     return DISK_PG - ftell(fp)%DISK_PG;
 }
 
+/* Função que dado fp no início de um registro, retorna o tamanho do registro sem alterar o fp */
+int get_record_size(FILE *fp){
+    int size;
+
+    fseek(fp, 1L, SEEK_CUR);
+    fread(&size, sizeof(int), 1, fp);
+    fseek(fp, -5L, SEEK_CUR);
+
+    return size;
+}
+
 /* Escreve um único registro considerando fp como início.
     is_writing_size determina se vai escrever o tamanho do
     novo registro ou se mantém igual (logicamente removido)
 */
 void write_record(FILE *fp, Record *r, int last_record, int is_writing_size){
-    int size = record_size(r);
+    int size;
+    if (!is_writing_size) size = get_record_size(fp);
+    else size = record_size(r);
 
     int pages = ceiling(ftell(fp)/(double)DISK_PG);
     int bytes_written = ftell(fp)%DISK_PG;
 
-    if ((bytes_written + size)/(double)DISK_PG > 1){
+    if (!is_writing_size && (bytes_written + size)/(double)DISK_PG > 1){
         int trash_amount = bytes_until_new_page(fp);
 
         char trash[DISK_PG];
@@ -252,7 +264,7 @@ void write_record(FILE *fp, Record *r, int last_record, int is_writing_size){
     }
 
     long long temp1 = -1;
-    size -= 5;  /* desconsidero os 5 primeiros bytes pra escrever no registro */
+    if (is_writing_size) size -= 5;  /* desconsidero os 5 primeiros bytes pra escrever no registro */
 
     fwrite("-", sizeof(char), 1, fp);
     if (is_writing_size) fwrite(&size, sizeof(int), 1, fp);
@@ -456,7 +468,7 @@ int compare_salary(FILE *fp, void *key, char tag, int *finished){
 
     double key_salary = *((double *)key); // recupero a chave do ponteiro
 
-    fseek(fp, (long)(sizeof(long long) + sizeof(int)) , SEEK_CUR);   // pula o encadeamento e o id, e byte de removido
+    fseek(fp, (long)(sizeof(long long) + sizeof(int)) , SEEK_CUR);   // pula o encadeamento e o id
     double record_salary;
     fread(&record_salary, sizeof(double), 1, fp);
 
@@ -687,17 +699,6 @@ void set_next_offset(FILE *fp, long long new){
     }
 }
 
-/* Função que dado fp no início de um registro, retorna o tamanho do registro sem alterar o fp */
-int get_record_size(FILE *fp){
-    int size;
-
-    fseek(fp, 1L, SEEK_CUR);
-    fread(&size, sizeof(int), 1, fp);
-    fseek(fp, -5L, SEEK_CUR);
-
-    return size;
-}
-
 /* Com fp no inicio do registro, imprime-o sem alterar o fp */
 void print_record_from_fp(FILE *fp){
     long start_pos = ftell(fp);
@@ -878,6 +879,7 @@ long long goto_last_record(FILE *fp){
 
 void insert_record(FILE *fp, Record *r){
     long start_pos = ftell(fp);
+    // int insert_size = get_record_size(fp);
 
     fseek(fp, 1L, SEEK_SET);
 
@@ -891,7 +893,7 @@ void insert_record(FILE *fp, Record *r){
         return;
     }
 
-    int insert_size = record_size(r);
+    int insert_size = record_size(r) - 5;
     int current_size;
 
     while (next_offset != -1){
@@ -960,63 +962,41 @@ void insert_records(char *filename){
 /* Com fp no começo do registro, altera ID sem alterar o fp */
 void set_id(FILE *fp, void *new){
     long long start_pos = ftell(fp);
+    print_record_from_fp(fp);
+
     fseek(fp, sizeof(char) + sizeof(int) + sizeof(long long), SEEK_CUR);
     fwrite(new, sizeof(int), 1, fp);
     fseek(fp, start_pos, SEEK_SET);
+
+    print_record_from_fp(fp);
+    putchar('\n');
 }
 
 /* Com fp no começo do registro, altera salario sem alterar o fp */
 void set_salary(FILE *fp, void *new){
     long long start_pos = ftell(fp);
+    print_record_from_fp(fp);
+
     fseek(fp, sizeof(char) + sizeof(int) + sizeof(long long) + sizeof(int), SEEK_CUR);
     fwrite(new, sizeof(double), 1, fp);
     fseek(fp, start_pos, SEEK_SET);
+
+    print_record_from_fp(fp);
+    putchar('\n');
 }
 
 /* Com fp no começo do registro, altera telefone sem alterar o fp */
 void set_phone(FILE *fp, void *new){
+    char tel[15];
+    replace_trash((char *)new, tel, 15);
+
     long long start_pos = ftell(fp);
+    print_record_from_fp(fp);
     fseek(fp, sizeof(char) + sizeof(int) + sizeof(long long) + sizeof(int) + sizeof(double), SEEK_CUR);
-    fwrite(new, sizeof(char), 14, fp);
+    fwrite(tel, sizeof(char), 14, fp);
     fseek(fp, start_pos, SEEK_SET);
-}
-
-int get_name_size(FILE *fp){
-    long long start_pos = ftell(fp);
-    int size;
-    char tag;
-
-    fseek(fp, sizeof(char) + sizeof(int) + sizeof(long long) + sizeof(int) + sizeof(double) + 14*sizeof(char), SEEK_CUR);
-    fread(&size, sizeof(int), 1, fp);
-    fread(&tag, sizeof(char), 1, fp);
-
-    if (tag != 'n') size = 2;   // nao tem cargo (vira 0 dps da subrtação)
-
-    fseek(fp, start_pos, SEEK_SET);
-    return size - 2;
-}
-
-int get_job_size(FILE *fp){
-    long long start_pos = ftell(fp);
-    int size = get_record_size(fp);
-    char tag;
-
-    fseek(fp, sizeof(char) + sizeof(int) + sizeof(long long) + sizeof(int) + sizeof(double) + 14*sizeof(char), SEEK_CUR);
-
-    int field_size = 1;
-    char record_tag;
-    /* Percorre os campos de tamanho variável */
-    do{
-        fseek(fp, (long)(field_size - 1), SEEK_CUR);
-        fread(&field_size, sizeof(int), 1, fp);
-        fread(&record_tag, sizeof(char), 1, fp);
-    } while (ftell(fp) <= start_pos + size && record_tag != 'c');
-
-    if (ftell(fp) > start_pos + size) field_size = 2;    // nao tem cargo (vira 0 dps da subtração)
-
-    fseek(fp, start_pos, SEEK_SET); // retorna p/ posicao inicial
-    return field_size - 2;
-
+    print_record_from_fp(fp);
+    putchar('\n');
 }
 
 /* Com fp no começo do registro, altera nome sem alterar o fp. Pode reinserir o registro se necessário */
@@ -1025,14 +1005,15 @@ void set_name(FILE *fp, void *new){
     memset(trash, TRASH, sizeof(trash));
 
     int size = get_record_size(fp);
-    int name_size = get_name_size(fp);
     char *new_name = (char *)new;
 
     long long start_pos = ftell(fp);
     Record *current = read_record_binary(fp);
+
     strcpy(current->nomeServidor, new_name);
 
-    if (strlen(new_name) <= name_size){
+    if (record_size(current) - 5 <= size){
+        fseek(fp, start_pos, SEEK_SET);
         set_removed(fp);
         write_record(fp, current, ftell(fp), 0);
     } else {
@@ -1049,14 +1030,15 @@ void set_job(FILE *fp, void *new){
     memset(trash, TRASH, sizeof(trash));
 
     int size = get_record_size(fp);
-    int job_size = get_job_size(fp);
     char *new_job = (char *)new;
 
     long long start_pos = ftell(fp);
     Record *current = read_record_binary(fp);
+
     strcpy(current->cargoServidor, new_job);
 
-    if (strlen(new_job) <= job_size){
+    if (record_size(current) - 5 <= size){
+        fseek(fp, start_pos, SEEK_SET);
         set_removed(fp);
         write_record(fp, current, ftell(fp), 0);
     } else {
@@ -1071,20 +1053,24 @@ void set_job(FILE *fp, void *new){
 void search_and_update(FILE *fp, int (*compare_function)(FILE *fp, void *key, char tag, int *finished), void *key, void (*update_field)(FILE *fp, void *new_val), void *new_val, char tag){
     fseek(fp, (long)DISK_PG, SEEK_SET);
 
+    long long fila_gambs[200];
+    int n_found = 0;
+
     int finished = 0;
     long long start_pos;
     for (int i = 0; !feof(fp) && !finished; i++){
-        if (compare_function(fp, key, tag, &finished)){
-            start_pos = ftell(fp);
-            update_field(fp, new_val);
-            fseek(fp, start_pos, SEEK_SET); // volta p/ começo do registro analisado, depois o pula
-        }
+        if (compare_function(fp, key, tag, &finished)) fila_gambs[n_found++] = ftell(fp);
         skip_record(fp);
+    }
+
+    // printf("========= %d FOUND =========\n", n_found);
+    for (int i = 0; i < n_found; i++){
+        fseek(fp, fila_gambs[i], SEEK_SET);
+        update_field(fp, new_val);
     }
 }
 
 void choose_second_field(FILE *fp, int (*compare_function)(FILE *fp, void *key, char tag, int *finished), void *key, char tag){
-
     int id;
     double salario;
     char field_name[20], value[MAX_SIZE];
@@ -1094,19 +1080,19 @@ void choose_second_field(FILE *fp, int (*compare_function)(FILE *fp, void *key, 
         scanf("%d", &id);
         search_and_update(fp, compare_function, key, set_id, &id, tag);
     }
-    if (!strcmp(field_name, "salarioServidor")){
+    else if (!strcmp(field_name, "salarioServidor")){
         salario = le_salario(); // funcao que contabiliza valor nulo (está no outro .h)
         search_and_update(fp, compare_function, key, set_salary, &salario, tag);
     }
-    if (!strcmp(field_name, "telefoneServidor")){
+    else if (!strcmp(field_name, "telefoneServidor")){
         scan_quote_string(value);
         search_and_update(fp, compare_function, key, set_phone, value, tag);
     }
-    if (!strcmp(field_name, "nomeServidor")){
+    else if (!strcmp(field_name, "nomeServidor")){
         scan_quote_string(value);
         search_and_update(fp, compare_function, key, set_name, value, tag);
     }
-    if (!strcmp(field_name, "cargoServidor")){
+    else if (!strcmp(field_name, "cargoServidor")){
         scan_quote_string(value);
         search_and_update(fp, compare_function, key, set_job, value, tag);
     }
@@ -1127,7 +1113,7 @@ void update_records(char *filename){
         return;
     }
 
-    // set_safety_byte(fp, '0');   // atualiza byte de integridade
+    set_safety_byte(fp, '0');   // atualiza byte de integridade
 
     char tags[5][41];  // leio a tag e o descritor. tag[i][0] = caracter que define a i-ésima tag
 
@@ -1149,25 +1135,38 @@ void update_records(char *filename){
             scanf("%d", &id);
             choose_second_field(fp, compare_id, &id, tags[0][0]);
         }
-        if (!strcmp(field_name, "salarioServidor")){
+        else if (!strcmp(field_name, "salarioServidor")){
             salario = le_salario(); // funcao que contabiliza valor nulo (está no outro .h)
             choose_second_field(fp, compare_salary, &salario, tags[1][0]);
         }
-        if (!strcmp(field_name, "telefoneServidor")){
+        else if (!strcmp(field_name, "telefoneServidor")){
             scan_quote_string(value);
             choose_second_field(fp, compare_phone, value, tags[2][0]);
         }
-        if (!strcmp(field_name, "nomeServidor")){
+        else if (!strcmp(field_name, "nomeServidor")){
             scan_quote_string(value);
             choose_second_field(fp, compare_name, value, tags[3][0]);
         }
-        if (!strcmp(field_name, "cargoServidor")){
+        else if (!strcmp(field_name, "cargoServidor")){
             scan_quote_string(value);
             choose_second_field(fp, compare_job, value, tags[4][0]);
         }
     }
 
     set_safety_byte(fp, '1');
-    // binarioNaTela1(fp);
+    binarioNaTela1(fp);
     fclose(fp);
+}
+
+void print_bytes(FILE *fp){
+    long long start = ftell(fp);
+
+    char buffer[400];
+    int size = get_record_size(fp);
+    fread(buffer, sizeof(char), size + sizeof(char) + sizeof(int), fp);
+
+    for (int i = 0; i < size + 5; i++) putchar(buffer[i]);
+    putchar('\n');
+
+    fseek(fp, start, SEEK_SET);
 }

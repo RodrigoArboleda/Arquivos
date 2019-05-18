@@ -1,5 +1,5 @@
 all:
-	gcc escrevernatela.c read_write.c main.c -o read -g -Wall
+	gcc escrevernatela.c read_write.c main.c -o read -g
 
 run:
 	./read

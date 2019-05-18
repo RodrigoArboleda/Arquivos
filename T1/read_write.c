@@ -12,8 +12,14 @@
 #define DISK_PG 32000
 #define TRASH '@'
 #define INVALID -1337
-#define DEBUG 0
-#define MAX_SIZE 100
+#define MAX_SIZE 200
+
+/* Macros de debug */
+#define PRINT_LIST 0
+#define PRINT_RECORDS 0
+#define BRIEF_REPORT 0
+#define PRINT_NOT_MOVED 0
+
 
 typedef struct record_ Record;
 
@@ -236,6 +242,7 @@ int get_record_size(FILE *fp){
 /* Escreve um único registro considerando fp como início.
     is_writing_size determina se vai escrever o tamanho do
     novo registro ou se mantém igual (logicamente removido)
+    Altera fp
 */
 void write_record(FILE *fp, Record *r, int last_record, int is_writing_size){
     int size;
@@ -245,7 +252,7 @@ void write_record(FILE *fp, Record *r, int last_record, int is_writing_size){
     int pages = ceiling(ftell(fp)/(double)DISK_PG);
     int bytes_written = ftell(fp)%DISK_PG;
 
-    if (!is_writing_size && (bytes_written + size)/(double)DISK_PG > 1){
+    if (is_writing_size && (bytes_written + size)/(double)DISK_PG > 1){
         int trash_amount = bytes_until_new_page(fp);
 
         char trash[DISK_PG];
@@ -267,8 +274,7 @@ void write_record(FILE *fp, Record *r, int last_record, int is_writing_size){
     if (is_writing_size) size -= 5;  /* desconsidero os 5 primeiros bytes pra escrever no registro */
 
     fwrite("-", sizeof(char), 1, fp);
-    if (is_writing_size) fwrite(&size, sizeof(int), 1, fp);
-    else fseek(fp, 4L, SEEK_CUR);                   // pula se nao for escrever
+    fwrite(&size, sizeof(int), 1, fp);
     fwrite(&temp1, sizeof(long long), 1, fp);       // encadeamento
     fwrite(&(r->idServidor), sizeof(int), 1, fp);
     fwrite(&(r->salarioServidor), sizeof(double), 1, fp);
@@ -516,9 +522,9 @@ int compare_name(FILE *fp, void *key, char tag, int *finished){
         fseek(fp, (long)(field_size - 1), SEEK_CUR);
         fread(&field_size, sizeof(int), 1, fp);
         fread(&record_tag, sizeof(char), 1, fp);
-    } while (ftell(fp) <= start_pos + record_size && record_tag != tag);
+    } while (!feof(fp) && ftell(fp) <= start_pos + record_size && record_tag != tag);
 
-    if (ftell(fp) > start_pos + record_size){   // nao tem nome
+    if (record_tag != tag){   // nao tem nome
         fseek(fp, start_pos, SEEK_SET); // retorna p/ posicao inicial
         return key_name[0] == '\0';
     }
@@ -550,11 +556,11 @@ int compare_job(FILE *fp, void *key, char tag, int *finished){
         fseek(fp, (long)(field_size - 1), SEEK_CUR);
         fread(&field_size, sizeof(int), 1, fp);
         fread(&record_tag, sizeof(char), 1, fp);
-    } while (ftell(fp) <= start_pos + record_size && record_tag != tag);
+    } while (!feof(fp) && ftell(fp) <= start_pos + record_size && record_tag != tag);
 
-    if (ftell(fp) > start_pos + record_size){
+    if (record_tag != tag){
         fseek(fp, start_pos, SEEK_SET); // retorna p/ posicao inicial
-        return 0;
+        return key_job[0] == '\0';
     }
 
     char record_job[300];
@@ -754,7 +760,6 @@ void remove_record(FILE *fp){
 
         current_size = get_record_size(fp);
         if (current_size >= removed_size){
-
             fseek(fp, previous_offset, SEEK_SET);
             set_next_offset(fp, removed_offset);          // anterior aponta p/ renovudo
 
@@ -776,6 +781,7 @@ void remove_record(FILE *fp){
     fseek(fp, start_pos, SEEK_SET);
 }
 
+/* Subrotina de busca de acordo com a funcao de comparacao. Chama a funcao passada por parametro quando acha os registros relevantes */
 void search_records_routine(FILE *fp, int (*compare_function)(FILE *fp, void *key, char tag, int *finished), void (*what_to_do)(FILE *fp), void *key, char tag){
     fseek(fp, (long)DISK_PG, SEEK_SET);
 
@@ -791,6 +797,7 @@ void search_records_routine(FILE *fp, int (*compare_function)(FILE *fp, void *ke
     }
 }
 
+/* Função principal da funcionalidade 4 */
 void remove_records(char *filename){
     int n;
     scanf("%d", &n);
@@ -801,7 +808,7 @@ void remove_records(char *filename){
         exit(0);
     }
 
-    if (DEBUG){
+    if (PRINT_LIST){
         print_list(fp);
         return;
     }
@@ -851,6 +858,7 @@ void remove_records(char *filename){
     fclose(fp);
 }
 
+/* Retorna o registro lido de acordo com a especificação, tratando valores nulos corretaemnte */
 Record *read_record_stdin(){
     int id;
     double salario;
@@ -865,6 +873,22 @@ Record *read_record_stdin(){
     return record_create(id, salario, tel, nome, cargo);
 }
 
+/* Função de debug que imprime o registro em forma de bytes. Não altera o fp */
+void print_bytes(FILE *fp){
+    long long start = ftell(fp);
+
+    char buffer[400];
+    int size = get_record_size(fp);
+    fread(buffer, sizeof(char), size + sizeof(char) + sizeof(int), fp);
+
+    for (int i = 0; i < size + 5; i++){
+        putchar(buffer[i]);
+    }
+    putchar('\n');
+
+    fseek(fp, start, SEEK_SET);
+}
+
 /* Coloca fp no final do ultimo registro e retorna offset do início do último registro */
 long long goto_last_record(FILE *fp){
     fseek(fp, DISK_PG, SEEK_SET);
@@ -877,18 +901,20 @@ long long goto_last_record(FILE *fp){
     return last_offset;
 }
 
-void insert_record(FILE *fp, Record *r){
+/* Insere o registro no arquivo, atualizando a lista encadeada se necessário. Não altera o fp */
+void insert_record(FILE *fp, Record *r, long long *last_record_offset){
     long start_pos = ftell(fp);
-    // int insert_size = get_record_size(fp);
 
     fseek(fp, 1L, SEEK_SET);
 
     long long next_offset = get_list_start(fp);
     long long previous_offset = 1;  // começa offset do topo da lista, caso remova o primeiro
 
-    if (next_offset == -1){                         // lista avazia, insiro no final do arquivo
-        long long last_offset = goto_last_record(fp);         // coloca fp no final do ulrimo registro e retorna o inicio do reg. p/ last_offset
-        write_record(fp, r, last_offset, 1);
+    if (next_offset == -1){                         // lista vazia, insiro no final do arquivo
+        fseek(fp, 0L, SEEK_END);
+        long long temp = ftell(fp);
+        write_record(fp, r, *last_record_offset, 1);
+        *last_record_offset = temp;
         fseek(fp, start_pos, SEEK_SET);
         return;
     }
@@ -914,13 +940,15 @@ void insert_record(FILE *fp, Record *r){
     }
 
     if (next_offset == -1){         // escreve no final, já que nao tem espaço disponível
-        long long last_offset = goto_last_record(fp);         // coloca fp no final do ulrimo registro e retorna o inicio do reg. p/ last_offset
-        write_record(fp, r, last_offset, 1);
+        fseek(fp, 0L, SEEK_END);
+        long long temp = ftell(fp);
+        write_record(fp, r, *last_record_offset, 1);
+        *last_record_offset = temp;
     }
-
     fseek(fp, start_pos, SEEK_SET);
 }
 
+/* Funcao principal da funcionalidade 5 */
 void insert_records(char *filename){
     int n;
     scanf("%d", &n);
@@ -931,10 +959,11 @@ void insert_records(char *filename){
         exit(0);
     }
 
-    if (DEBUG){
+    if (PRINT_LIST){
         print_list(fp);
         return;
     }
+
 
     set_safety_byte(fp, '0');   // atualiza byte de integridade
 
@@ -948,9 +977,10 @@ void insert_records(char *filename){
     fread(tags[3], sizeof(char), 41, fp);
     fread(tags[4], sizeof(char), 41, fp);
 
+    long long last_record_offset = goto_last_record(fp);
     for (int i = 0; i < n; i++){
         Record *r = read_record_stdin();
-        insert_record(fp, r);
+        insert_record(fp, r, &last_record_offset);
         record_free(r);
     }
 
@@ -960,47 +990,49 @@ void insert_records(char *filename){
 }
 
 /* Com fp no começo do registro, altera ID sem alterar o fp */
-void set_id(FILE *fp, void *new){
+void set_id(FILE *fp, void *new, long long *last_record_offset){
     long long start_pos = ftell(fp);
-    print_record_from_fp(fp);
+    if (PRINT_RECORDS) print_record_from_fp(fp);
 
     fseek(fp, sizeof(char) + sizeof(int) + sizeof(long long), SEEK_CUR);
     fwrite(new, sizeof(int), 1, fp);
     fseek(fp, start_pos, SEEK_SET);
 
-    print_record_from_fp(fp);
-    putchar('\n');
+    if (PRINT_RECORDS) print_record_from_fp(fp);
+    if (PRINT_RECORDS) putchar('\n');
 }
 
 /* Com fp no começo do registro, altera salario sem alterar o fp */
-void set_salary(FILE *fp, void *new){
+void set_salary(FILE *fp, void *new, long long *last_record_offset){
     long long start_pos = ftell(fp);
-    print_record_from_fp(fp);
+    if (PRINT_RECORDS) print_record_from_fp(fp);
 
     fseek(fp, sizeof(char) + sizeof(int) + sizeof(long long) + sizeof(int), SEEK_CUR);
     fwrite(new, sizeof(double), 1, fp);
     fseek(fp, start_pos, SEEK_SET);
 
-    print_record_from_fp(fp);
-    putchar('\n');
+    if (PRINT_RECORDS) print_record_from_fp(fp);
+    if (PRINT_RECORDS) putchar('\n');
 }
 
 /* Com fp no começo do registro, altera telefone sem alterar o fp */
-void set_phone(FILE *fp, void *new){
+void set_phone(FILE *fp, void *new, long long *last_record_offset){
     char tel[15];
     replace_trash((char *)new, tel, 15);
 
     long long start_pos = ftell(fp);
-    print_record_from_fp(fp);
+    if (PRINT_RECORDS) print_record_from_fp(fp);
+
     fseek(fp, sizeof(char) + sizeof(int) + sizeof(long long) + sizeof(int) + sizeof(double), SEEK_CUR);
     fwrite(tel, sizeof(char), 14, fp);
     fseek(fp, start_pos, SEEK_SET);
-    print_record_from_fp(fp);
-    putchar('\n');
+
+    if (PRINT_RECORDS) print_record_from_fp(fp);
+    if (PRINT_RECORDS) putchar('\n');
 }
 
 /* Com fp no começo do registro, altera nome sem alterar o fp. Pode reinserir o registro se necessário */
-void set_name(FILE *fp, void *new){
+void set_name(FILE *fp, void *new, long long *last_record_offset){
     char trash[300];
     memset(trash, TRASH, sizeof(trash));
 
@@ -1010,22 +1042,35 @@ void set_name(FILE *fp, void *new){
     long long start_pos = ftell(fp);
     Record *current = read_record_binary(fp);
 
+    if (PRINT_RECORDS) record_print(current);
     strcpy(current->nomeServidor, new_name);
+    if (PRINT_RECORDS){
+        record_print(current);
+        putchar('\n');
+    }
+
+    fseek(fp, start_pos, SEEK_SET);
 
     if (record_size(current) - 5 <= size){
-        fseek(fp, start_pos, SEEK_SET);
+        if (PRINT_NOT_MOVED) print_bytes(fp);
         set_removed(fp);
+        if (PRINT_NOT_MOVED) print_bytes(fp);
         write_record(fp, current, ftell(fp), 0);
-    } else {
         fseek(fp, start_pos, SEEK_SET);
+        if (PRINT_NOT_MOVED){
+            print_bytes(fp);
+            putchar('\n');
+        }
+    } else {
         remove_record(fp);
-        insert_record(fp, current);
+        insert_record(fp, current, last_record_offset);
     }
 
     record_free(current);
 }
 
-void set_job(FILE *fp, void *new){
+/* Com fp no começo do registro, altera nome sem alterar o fp. Pode reinserir o registro se necessário */
+void set_job(FILE *fp, void *new, long long *last_record_offset){
     char trash[300];
     memset(trash, TRASH, sizeof(trash));
 
@@ -1035,25 +1080,37 @@ void set_job(FILE *fp, void *new){
     long long start_pos = ftell(fp);
     Record *current = read_record_binary(fp);
 
+    if (PRINT_RECORDS) record_print(current);
     strcpy(current->cargoServidor, new_job);
+    if (PRINT_RECORDS){
+        record_print(current);
+        putchar('\n');
+    }
 
+    fseek(fp, start_pos, SEEK_SET);
     if (record_size(current) - 5 <= size){
-        fseek(fp, start_pos, SEEK_SET);
+        if (PRINT_NOT_MOVED) print_bytes(fp);
         set_removed(fp);
+        if (PRINT_NOT_MOVED) print_bytes(fp);
         write_record(fp, current, ftell(fp), 0);
-    } else {
         fseek(fp, start_pos, SEEK_SET);
+        if (PRINT_NOT_MOVED){
+            print_bytes(fp);
+            putchar('\n');
+        }
+    } else {
         remove_record(fp);
-        insert_record(fp, current);
+        insert_record(fp, current, last_record_offset);
     }
 
     record_free(current);
 }
 
-void search_and_update(FILE *fp, int (*compare_function)(FILE *fp, void *key, char tag, int *finished), void *key, void (*update_field)(FILE *fp, void *new_val), void *new_val, char tag){
+/* Busca os campos de acordo com a funcao de comparacao, insere os offsets dos registros numa fila e depois atualiza-os de acordo com a funcao de substituição */
+void search_and_update(FILE *fp, int (*compare_function)(FILE *fp, void *key, char tag, int *finished), void *key, void (*update_field)(FILE *fp, void *new_val, long long *last_record_offset), void *new_val, char tag, long long *last_record_offset){
     fseek(fp, (long)DISK_PG, SEEK_SET);
 
-    long long fila_gambs[200];
+    long long fila_gambs[1000];
     int n_found = 0;
 
     int finished = 0;
@@ -1063,41 +1120,51 @@ void search_and_update(FILE *fp, int (*compare_function)(FILE *fp, void *key, ch
         skip_record(fp);
     }
 
-    // printf("========= %d FOUND =========\n", n_found);
+    if (PRINT_RECORDS || BRIEF_REPORT) printf("========= %d FOUND =========\n", n_found);
     for (int i = 0; i < n_found; i++){
         fseek(fp, fila_gambs[i], SEEK_SET);
-        update_field(fp, new_val);
+        update_field(fp, new_val, last_record_offset);
     }
+    if (BRIEF_REPORT) putchar('\n');
 }
 
-void choose_second_field(FILE *fp, int (*compare_function)(FILE *fp, void *key, char tag, int *finished), void *key, char tag){
+/* Faz a leitura do segundo campo e escolhe a funcao de comparação e substituição, mandando p/ atualização */
+void choose_second_field(FILE *fp, int (*compare_function)(FILE *fp, void *key, char tag, int *finished), void *key, char tag, long long *last_record_offset){
     int id;
     double salario;
     char field_name[20], value[MAX_SIZE];
     scanf("%s%*c", field_name);
 
+    if (PRINT_RECORDS || BRIEF_REPORT) printf("mudando %s p/ ", field_name);
+
     if (!strcmp(field_name, "idServidor")){
         scanf("%d", &id);
-        search_and_update(fp, compare_function, key, set_id, &id, tag);
+        if (PRINT_RECORDS || BRIEF_REPORT) printf("%d\n", id);
+        search_and_update(fp, compare_function, key, set_id, &id, tag, last_record_offset);
     }
     else if (!strcmp(field_name, "salarioServidor")){
         salario = le_salario(); // funcao que contabiliza valor nulo (está no outro .h)
-        search_and_update(fp, compare_function, key, set_salary, &salario, tag);
+        if (PRINT_RECORDS || BRIEF_REPORT) printf("%.2lf\n", salario);
+        search_and_update(fp, compare_function, key, set_salary, &salario, tag, last_record_offset);
     }
     else if (!strcmp(field_name, "telefoneServidor")){
         scan_quote_string(value);
-        search_and_update(fp, compare_function, key, set_phone, value, tag);
+        if (PRINT_RECORDS || BRIEF_REPORT) printf("%s\n", value);
+        search_and_update(fp, compare_function, key, set_phone, value, tag, last_record_offset);
     }
     else if (!strcmp(field_name, "nomeServidor")){
         scan_quote_string(value);
-        search_and_update(fp, compare_function, key, set_name, value, tag);
+        if (PRINT_RECORDS || BRIEF_REPORT) printf("%s\n", value);
+        search_and_update(fp, compare_function, key, set_name, value, tag, last_record_offset);
     }
     else if (!strcmp(field_name, "cargoServidor")){
         scan_quote_string(value);
-        search_and_update(fp, compare_function, key, set_job, value, tag);
+        if (PRINT_RECORDS || BRIEF_REPORT) printf("%s\n", value);
+        search_and_update(fp, compare_function, key, set_job, value, tag, last_record_offset);
     }
 }
 
+/* Funcao principal da funcionalidade 6 */
 void update_records(char *filename){
     int n;
     scanf("%d", &n);
@@ -1108,7 +1175,7 @@ void update_records(char *filename){
         exit(0);
     }
 
-    if (DEBUG){
+    if (PRINT_LIST){
         print_list(fp);
         return;
     }
@@ -1125,48 +1192,43 @@ void update_records(char *filename){
     fread(tags[3], sizeof(char), 41, fp);
     fread(tags[4], sizeof(char), 41, fp);
 
+    long long last_record_offset = goto_last_record(fp);
+
     int id;
     double salario;
     char field_name[20], value[MAX_SIZE];
     for (int i = 0; i < n; i++){
         scanf("%s%*c", field_name);
+        if (PRINT_RECORDS || BRIEF_REPORT) printf("Pesquisando %s ", field_name);
 
         if (!strcmp(field_name, "idServidor")){
             scanf("%d", &id);
-            choose_second_field(fp, compare_id, &id, tags[0][0]);
+            if (PRINT_RECORDS || BRIEF_REPORT) printf("= %d\n", id);
+            choose_second_field(fp, compare_id, &id, tags[0][0], &last_record_offset);
         }
         else if (!strcmp(field_name, "salarioServidor")){
             salario = le_salario(); // funcao que contabiliza valor nulo (está no outro .h)
-            choose_second_field(fp, compare_salary, &salario, tags[1][0]);
+            if (PRINT_RECORDS || BRIEF_REPORT) printf("= %.2lf\n", salario);
+            choose_second_field(fp, compare_salary, &salario, tags[1][0], &last_record_offset);
         }
         else if (!strcmp(field_name, "telefoneServidor")){
             scan_quote_string(value);
-            choose_second_field(fp, compare_phone, value, tags[2][0]);
+            if (PRINT_RECORDS || BRIEF_REPORT) printf("= %s\n", value);
+            choose_second_field(fp, compare_phone, value, tags[2][0], &last_record_offset);
         }
         else if (!strcmp(field_name, "nomeServidor")){
             scan_quote_string(value);
-            choose_second_field(fp, compare_name, value, tags[3][0]);
+            if (PRINT_RECORDS || BRIEF_REPORT) printf("= %s\n", value);
+            choose_second_field(fp, compare_name, value, tags[3][0], &last_record_offset);
         }
         else if (!strcmp(field_name, "cargoServidor")){
             scan_quote_string(value);
-            choose_second_field(fp, compare_job, value, tags[4][0]);
+            if (PRINT_RECORDS || BRIEF_REPORT) printf("= %s\n", value);
+            choose_second_field(fp, compare_job, value, tags[4][0], &last_record_offset);
         }
     }
 
     set_safety_byte(fp, '1');
-    binarioNaTela1(fp);
+    if (!PRINT_RECORDS && !BRIEF_REPORT) binarioNaTela1(fp);
     fclose(fp);
-}
-
-void print_bytes(FILE *fp){
-    long long start = ftell(fp);
-
-    char buffer[400];
-    int size = get_record_size(fp);
-    fread(buffer, sizeof(char), size + sizeof(char) + sizeof(int), fp);
-
-    for (int i = 0; i < size + 5; i++) putchar(buffer[i]);
-    putchar('\n');
-
-    fseek(fp, start, SEEK_SET);
 }

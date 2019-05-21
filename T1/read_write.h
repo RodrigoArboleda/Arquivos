@@ -15,4 +15,6 @@ void insert_records(char *filename);
 
 void update_records(char *filename);
 
+void sort_file(char *filename);
+
 #endif

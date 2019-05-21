@@ -29,5 +29,8 @@ int main(){
         case 6:
             update_records(filename);
             break;
+        case 7:
+            sort_file(filename);
+            break;
     }
 }

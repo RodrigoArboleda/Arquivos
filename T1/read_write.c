@@ -14,6 +14,7 @@
 #define TRASH '@'
 #define INVALID -1337
 #define MAX_SIZE 200
+#define TAG_SIZE 41
 
 /* Macros de debug */
 #define PRINT_LIST 0
@@ -572,7 +573,7 @@ int compare_job(FILE *fp, void *key, char tag, int *finished){
 }
 
 /* função que imprime no formato da funcionalidade 3 */
-void record_print_tags(Record *r, char tags[][41]){
+void record_print_tags(Record *r, char tags[][TAG_SIZE]){
     printf("%s: %d\n", 1 + tags[0], r->idServidor);
 
     if (r->salarioServidor != -1) printf("%s: %.2lf\n", 1 + tags[1], r->salarioServidor);
@@ -589,7 +590,7 @@ void record_print_tags(Record *r, char tags[][41]){
 }
 
 /* Essa função busca os registros pela chave key, acessando e comparando o campo determinado por compare_function */
-void search_records(FILE *fp, int (*compare_function)(FILE *fp, void *key, char tag, int *finished), void *key, char tag, char tags[][41]){
+void search_records(FILE *fp, int (*compare_function)(FILE *fp, void *key, char tag, int *finished), void *key, char tag, char tags[][TAG_SIZE]){
     int results = 0;
 
     int finished = 0;   /* variável que diz se já achou o campo único */
@@ -621,15 +622,15 @@ void search_binary_file(char *file_name){
         exit(0);
     }
 
-    char tags[5][41];  // leio a tag e o descritor. tag[i][0] = caracter que define a i-ésima tag
+    char tags[5][TAG_SIZE];  // leio a tag e o descritor. tag[i][0] = caracter que define a i-ésima tag
 
     /* le os metadados do cabeçalho */
     fseek(fp, (long)9, SEEK_SET);
-    fread(tags[0], sizeof(char), 41, fp);
-    fread(tags[1], sizeof(char), 41, fp);
-    fread(tags[2], sizeof(char), 41, fp);
-    fread(tags[3], sizeof(char), 41, fp);
-    fread(tags[4], sizeof(char), 41, fp);
+    fread(tags[0], sizeof(char), TAG_SIZE, fp);
+    fread(tags[1], sizeof(char), TAG_SIZE, fp);
+    fread(tags[2], sizeof(char), TAG_SIZE, fp);
+    fread(tags[3], sizeof(char), TAG_SIZE, fp);
+    fread(tags[4], sizeof(char), TAG_SIZE, fp);
 
     fseek(fp, (long)(DISK_PG), SEEK_SET); // pula cabeçalho
 
@@ -816,15 +817,15 @@ void remove_records(char *filename){
 
     set_safety_byte(fp, '0');   // atualiza byte de integridade
 
-    char tags[5][41];  // leio a tag e o descritor. tag[i][0] = caracter que define a i-ésima tag
+    char tags[5][TAG_SIZE];  // leio a tag e o descritor. tag[i][0] = caracter que define a i-ésima tag
 
     /* le os metadados do cabeçalho */
     fseek(fp, (long)9, SEEK_SET);
-    fread(tags[0], sizeof(char), 41, fp);
-    fread(tags[1], sizeof(char), 41, fp);
-    fread(tags[2], sizeof(char), 41, fp);
-    fread(tags[3], sizeof(char), 41, fp);
-    fread(tags[4], sizeof(char), 41, fp);
+    fread(tags[0], sizeof(char), TAG_SIZE, fp);
+    fread(tags[1], sizeof(char), TAG_SIZE, fp);
+    fread(tags[2], sizeof(char), TAG_SIZE, fp);
+    fread(tags[3], sizeof(char), TAG_SIZE, fp);
+    fread(tags[4], sizeof(char), TAG_SIZE, fp);
 
     int id;
     double salario;
@@ -968,15 +969,15 @@ void insert_records(char *filename){
 
     set_safety_byte(fp, '0');   // atualiza byte de integridade
 
-    char tags[5][41];  // leio a tag e o descritor. tag[i][0] = caracter que define a i-ésima tag
+    char tags[5][TAG_SIZE];  // leio a tag e o descritor. tag[i][0] = caracter que define a i-ésima tag
 
     /* le os metadados do cabeçalho */
     fseek(fp, (long)9, SEEK_SET);
-    fread(tags[0], sizeof(char), 41, fp);
-    fread(tags[1], sizeof(char), 41, fp);
-    fread(tags[2], sizeof(char), 41, fp);
-    fread(tags[3], sizeof(char), 41, fp);
-    fread(tags[4], sizeof(char), 41, fp);
+    fread(tags[0], sizeof(char), TAG_SIZE, fp);
+    fread(tags[1], sizeof(char), TAG_SIZE, fp);
+    fread(tags[2], sizeof(char), TAG_SIZE, fp);
+    fread(tags[3], sizeof(char), TAG_SIZE, fp);
+    fread(tags[4], sizeof(char), TAG_SIZE, fp);
 
     long long last_record_offset = goto_last_record(fp);
     for (int i = 0; i < n; i++){
@@ -1183,15 +1184,15 @@ void update_records(char *filename){
 
     set_safety_byte(fp, '0');   // atualiza byte de integridade
 
-    char tags[5][41];  // leio a tag e o descritor. tag[i][0] = caracter que define a i-ésima tag
+    char tags[5][TAG_SIZE];  // leio a tag e o descritor. tag[i][0] = caracter que define a i-ésima tag
 
     /* le os metadados do cabeçalho */
     fseek(fp, (long)9, SEEK_SET);
-    fread(tags[0], sizeof(char), 41, fp);
-    fread(tags[1], sizeof(char), 41, fp);
-    fread(tags[2], sizeof(char), 41, fp);
-    fread(tags[3], sizeof(char), 41, fp);
-    fread(tags[4], sizeof(char), 41, fp);
+    fread(tags[0], sizeof(char), TAG_SIZE, fp);
+    fread(tags[1], sizeof(char), TAG_SIZE, fp);
+    fread(tags[2], sizeof(char), TAG_SIZE, fp);
+    fread(tags[3], sizeof(char), TAG_SIZE, fp);
+    fread(tags[4], sizeof(char), TAG_SIZE, fp);
 
     long long last_record_offset = goto_last_record(fp);
 
@@ -1234,7 +1235,24 @@ void update_records(char *filename){
     fclose(fp);
 }
 
+int get_record_id(Record *r){
+    if (r == NULL) return -1;
+    return r->idServidor;
+}
 
+void write_new_header(FILE *fp, char tags[][TAG_SIZE]){
+    fseek(fp, 0L, SEEK_SET);
+
+    long long temp = -1;
+    char trash[DISK_PG];
+    memset(trash, TRASH, sizeof(trash));
+
+    fwrite("0", sizeof(char), 1, fp);
+    fwrite(&temp, sizeof(long long), 1, fp);
+
+    for (int i = 0; i < 5; i++) fwrite(tags[i], sizeof(char), TAG_SIZE, fp);
+    fwrite(trash, sizeof(char), bytes_until_new_page(fp), fp);
+}
 
 /* Funcao principal da funcionalidade 7 */
 void sort_file(char *filename){
@@ -1249,8 +1267,34 @@ void sort_file(char *filename){
         exit(0);
     }
 
-    List *l = list_create((void *)record_size, (void *)record_free);
+    List *l = list_create((void *)get_record_id, (void *)record_free, (void *)record_print);
 
-    list_free(l);
+    char tags[5][TAG_SIZE];
+
+    fseek(fp, (long)9, SEEK_SET);
+    fread(tags[0], sizeof(char), TAG_SIZE, fp);
+    fread(tags[1], sizeof(char), TAG_SIZE, fp);
+    fread(tags[2], sizeof(char), TAG_SIZE, fp);
+    fread(tags[3], sizeof(char), TAG_SIZE, fp);
+    fread(tags[4], sizeof(char), TAG_SIZE, fp);
+
+    fseek(fp, DISK_PG, SEEK_SET);
+
+    Record *r;
+    for (int i = 0; !feof(fp); i++){
+        if (is_removed(fp)) skip_record(fp);
+        r = read_record_binary(fp);
+        list_insert(l, r);
+    }
     fclose(fp);
+
+    fp = fopen(filename, "wb+");
+    
+    write_new_header(fp, tags);
+    list_write_records(l, fp, (void *)write_record);
+
+    set_safety_byte(fp, '1');
+
+    fclose(fp);
+    list_free(l);
 }

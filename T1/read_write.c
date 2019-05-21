@@ -4,6 +4,7 @@
 
 #include "read_write.h"
 #include "escrevernatela.h"
+#include "list.h"
 
 /* Victor Giovannoni 10786159 */
 /* OBS: Em alguns comentários, quando digo que a função não altera o fp,
@@ -1248,7 +1249,8 @@ void sort_file(char *filename){
         exit(0);
     }
 
+    List *l = list_create((void *)record_size, (void *)record_free);
 
-
+    list_free(l);
     fclose(fp);
 }

@@ -1232,3 +1232,23 @@ void update_records(char *filename){
     if (!PRINT_RECORDS && !BRIEF_REPORT) binarioNaTela1(fp);
     fclose(fp);
 }
+
+
+
+/* Funcao principal da funcionalidade 7 */
+void sort_file(char *filename){
+
+    int n;
+    scanf("%d", &n);
+
+    FILE *fp = fopen(filename, "rb");
+
+    if (fp == NULL || safety_byte(fp) == '0'){
+        printf("Falha no processamento do arquivo.\n");
+        exit(0);
+    }
+
+
+
+    fclose(fp);
+}

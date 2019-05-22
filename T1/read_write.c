@@ -1322,6 +1322,9 @@ void merge_files_routine(FILE *f1, FILE *f2, FILE *f3){
 
     long long previous = -1, current = ftell(f3);
 
+    fseek(f1, DISK_PG, SEEK_SET);
+    fseek(f2, DISK_PG, SEEK_SET);
+
     Record *a = read_record_binary(f1);
     Record *b = read_record_binary(f2);
 
@@ -1364,6 +1367,9 @@ void intersect_files_routine(FILE *f1, FILE *f2, FILE *f3){
     copy_file_header(f1, f3);
 
     long long previous = -1, current = ftell(f3);
+
+    fseek(f1, DISK_PG, SEEK_SET);
+    fseek(f2, DISK_PG, SEEK_SET);
 
     Record *a = read_record_binary(f1);
     Record *b = read_record_binary(f2);

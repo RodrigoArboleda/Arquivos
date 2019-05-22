@@ -32,5 +32,10 @@ int main(){
         case 7:
             sort_file(filename);
             break;
+        case 8:
+            merge_files(filename);
+            break;
+        case 9:
+            intersect_files(filename);
     }
 }

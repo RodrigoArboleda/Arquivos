@@ -17,4 +17,8 @@ void update_records(char *filename);
 
 void sort_file(char *filename);
 
+void merge_files(char *filename);
+
+void intersect_files(char *filename);
+
 #endif

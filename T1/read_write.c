@@ -21,7 +21,7 @@
 #define PRINT_RECORDS 0
 #define BRIEF_REPORT 0
 #define PRINT_NOT_MOVED 0
-
+#define PRINT_FILE_ON_SCREEN 1
 
 typedef struct record_ Record;
 
@@ -856,7 +856,7 @@ void remove_records(char *filename){
     }
 
     set_safety_byte(fp, '1');
-    binarioNaTela1(fp);
+    if (PRINT_FILE_ON_SCREEN) binarioNaTela1(fp);
     fclose(fp);
 }
 
@@ -987,7 +987,7 @@ void insert_records(char *filename){
     }
 
     set_safety_byte(fp, '1');
-    binarioNaTela1(fp);
+    if (PRINT_FILE_ON_SCREEN) binarioNaTela1(fp);
     fclose(fp);
 }
 
@@ -1231,7 +1231,7 @@ void update_records(char *filename){
     }
 
     set_safety_byte(fp, '1');
-    if (!PRINT_RECORDS && !BRIEF_REPORT) binarioNaTela1(fp);
+    if (PRINT_FILE_ON_SCREEN) binarioNaTela1(fp);
     fclose(fp);
 }
 
@@ -1256,13 +1256,12 @@ void write_new_header(FILE *fp, char tags[][TAG_SIZE]){
 
 /* Funcao principal da funcionalidade 7 */
 void sort_file(char *filename){
+    char filename2[30];
+    scanf("%s", filename2);
 
-    int n;
-    scanf("%d", &n);
+    FILE *original_file = fopen(filename, "rb");
 
-    FILE *fp = fopen(filename, "rb");
-
-    if (fp == NULL || safety_byte(fp) == '0'){
+    if (original_file == NULL || safety_byte(original_file) == '0'){
         printf("Falha no processamento do arquivo.\n");
         exit(0);
     }
@@ -1271,30 +1270,166 @@ void sort_file(char *filename){
 
     char tags[5][TAG_SIZE];
 
-    fseek(fp, (long)9, SEEK_SET);
-    fread(tags[0], sizeof(char), TAG_SIZE, fp);
-    fread(tags[1], sizeof(char), TAG_SIZE, fp);
-    fread(tags[2], sizeof(char), TAG_SIZE, fp);
-    fread(tags[3], sizeof(char), TAG_SIZE, fp);
-    fread(tags[4], sizeof(char), TAG_SIZE, fp);
+    fseek(original_file, (long)9, SEEK_SET);
+    fread(tags[0], sizeof(char), TAG_SIZE, original_file);
+    fread(tags[1], sizeof(char), TAG_SIZE, original_file);
+    fread(tags[2], sizeof(char), TAG_SIZE, original_file);
+    fread(tags[3], sizeof(char), TAG_SIZE, original_file);
+    fread(tags[4], sizeof(char), TAG_SIZE, original_file);
 
-    fseek(fp, DISK_PG, SEEK_SET);
+    fseek(original_file, DISK_PG, SEEK_SET);
 
     Record *r;
-    for (int i = 0; !feof(fp); i++){
-        if (is_removed(fp)) skip_record(fp);
-        r = read_record_binary(fp);
+    for (int i = 0; !feof(original_file); i++){
+        if (is_removed(original_file)) skip_record(original_file);
+        r = read_record_binary(original_file);
         list_insert(l, r);
     }
-    fclose(fp);
+    fclose(original_file);
 
-    fp = fopen(filename, "wb+");
-    
-    write_new_header(fp, tags);
-    list_write_records(l, fp, (void *)write_record);
+    FILE *output_file = fopen(filename2, "wb+");
 
-    set_safety_byte(fp, '1');
+    write_new_header(output_file, tags);
+    list_write_records(l, output_file, (void *)write_record);
 
-    fclose(fp);
+    set_safety_byte(output_file, '1');
+
+    if (PRINT_FILE_ON_SCREEN) binarioNaTela1(output_file);
+
+    fclose(output_file);
     list_free(l);
+}
+
+/* Copia o cabeçalho de original p/ output, escrevendo encadeaento como -1. Altera fps p/ proxima pg. disco */
+void copy_file_header(FILE *original, FILE *output){
+    char *header[DISK_PG];
+    fread(header, sizeof(char), DISK_PG, original);
+    long long temp = -1;
+
+    fwrite("0", sizeof(char), 1, output);
+    fwrite(&temp, sizeof(long long), 1, output);
+    fwrite(header + sizeof(char) + sizeof(long long), sizeof(char), DISK_PG - sizeof(char) - sizeof(long long), output);
+
+    fseek(original, DISK_PG, SEEK_SET);
+    fseek(output, DISK_PG, SEEK_SET);
+}
+
+void merge_files_routine(FILE *f1, FILE *f2, FILE *f3){
+    copy_file_header(f1, f3);
+
+    long long previous = -1, current = ftell(f3);
+
+    Record *a = read_record_binary(f1);
+    Record *b = read_record_binary(f2);
+
+    while (!feof(f1) && !feof(f2)){
+        current = ftell(f3);
+        if (a->idServidor > b->idServidor) {
+            write_record(f3, a, previous, 1);
+            record_free(a);
+            a = read_record_binary(f1);
+        } else if (a->idServidor < b->idServidor){
+            write_record(f3, b, previous, 1);
+            record_free(b);
+            b = read_record_binary(f2);
+        } else {
+            write_record(f3, a, previous, 1);
+            record_free(a);
+            record_free(b);
+            a = read_record_binary(f1);
+            b = read_record_binary(f2);
+        }
+        previous = current;
+    }
+    while (!feof(f1)){
+        current = ftell(f3);
+        write_record(f3, a, previous, 1);
+        record_free(a);
+        a = read_record_binary(f1);
+        previous = current;
+    }
+    while (!feof(f2)){
+        current = ftell(f3);
+        write_record(f3, b, previous, 1);
+        record_free(b);
+        b = read_record_binary(f2);
+        previous = current;
+    }
+}
+
+void intersect_files_routine(FILE *f1, FILE *f2, FILE *f3){
+    copy_file_header(f1, f3);
+
+    long long previous = -1, current = ftell(f3);
+
+    Record *a = read_record_binary(f1);
+    Record *b = read_record_binary(f2);
+
+    while (!feof(f1) && !feof(f2)){
+        current = ftell(f3);
+        if (a->idServidor > b->idServidor){
+            record_free(a);
+            a = read_record_binary(f1);
+        } else if (a->idServidor < b->idServidor){
+            record_free(b);
+            b = read_record_binary(f2);
+        } else {
+            write_record(f3, a, previous, 1);
+            record_free(a);
+            record_free(b);
+            a = read_record_binary(f1);
+            b = read_record_binary(f2);
+        }
+        previous = current;
+    }
+    record_free(a);
+    record_free(b);
+}
+
+void merge_files(char *filename){
+    char filename2[30];
+    char filename3[30];
+    scanf("%s %s", filename2, filename3);
+
+    FILE *file1 = fopen(filename, "rb");
+    FILE *file2 = fopen(filename2, "rb");
+    FILE *file3 = fopen(filename3, "wb+");
+
+    if (file1 == NULL || file2 == NULL || safety_byte(file1) != '1' || safety_byte(file2) != '1'){
+        puts("Falha no processamento do arquivo.");
+        exit(0);
+    }
+
+    merge_files_routine(file1, file2, file3);
+
+    fclose(file1);
+    fclose(file2);
+
+    set_safety_byte(file3, '1');
+    if (PRINT_FILE_ON_SCREEN) binarioNaTela1(file3);
+    fclose(file3);
+}
+
+void intersect_files(char *filename){
+    char filename2[30];
+    char filename3[30];
+    scanf("%s %s", filename2, filename3);
+
+    FILE *file1 = fopen(filename, "rb");
+    FILE *file2 = fopen(filename2, "rb");
+    FILE *file3 = fopen(filename3, "wb+");
+
+    if (file1 == NULL || file2 == NULL || safety_byte(file1) != '1' || safety_byte(file2) != '1'){
+        puts("Falha no processamento do arquivo.");
+        exit(0);
+    }
+
+    intersect_files_routine(file1, file2, file3);
+
+    fclose(file1);
+    fclose(file2);
+
+    set_safety_byte(file3, '1');
+    if (PRINT_FILE_ON_SCREEN) binarioNaTela1(file3);
+    fclose(file3);
 }

@@ -21,7 +21,8 @@
 #define PRINT_RECORDS 0
 #define BRIEF_REPORT 0
 #define PRINT_NOT_MOVED 0
-#define PRINT_FILE_ON_SCREEN 1
+#define PRINT_FILE_ON_SCREEN 0
+#define PRINT_ORDERED_LIST 1
 
 typedef struct record_ Record;
 
@@ -281,8 +282,8 @@ void write_record(FILE *fp, Record *r, int last_record, int is_writing_size){
     fwrite(&(r->idServidor), sizeof(int), 1, fp);
     fwrite(&(r->salarioServidor), sizeof(double), 1, fp);
 
-    char telefone[14];
-    replace_trash(r->telefoneServidor, telefone, 14);
+    char telefone[15];
+    replace_trash(r->telefoneServidor, telefone, 15);
     fwrite(telefone, sizeof(char), 14, fp);
 
     int str_size;
@@ -1291,13 +1292,15 @@ void sort_file(char *filename){
 
     write_new_header(output_file, tags);
     list_write_records(l, output_file, (void *)write_record);
+    if (PRINT_ORDERED_LIST) list_print(l);
+    list_free(l);
+
 
     set_safety_byte(output_file, '1');
 
     if (PRINT_FILE_ON_SCREEN) binarioNaTela1(output_file);
 
     fclose(output_file);
-    list_free(l);
 }
 
 /* Copia o cabeçalho de original p/ output, escrevendo encadeaento como -1. Altera fps p/ proxima pg. disco */

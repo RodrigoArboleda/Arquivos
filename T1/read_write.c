@@ -1291,7 +1291,7 @@ void sort_file(char *filename){
     FILE *output_file = fopen(filename2, "wb+");
 
     write_new_header(output_file, tags);
-    list_write_records(l, output_file, (void *)write_record);
+    list_write_records(l, output_file, (void (*)(FILE *, void *, int, int))write_record);
     if (PRINT_ORDERED_LIST) list_print(l);
     list_free(l);
 

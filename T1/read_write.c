@@ -22,7 +22,12 @@
 #define BRIEF_REPORT 0
 #define PRINT_NOT_MOVED 0
 #define PRINT_FILE_ON_SCREEN 0
-#define PRINT_ORDERED_LIST 1
+#define PRINT_ORDERED_LIST 0
+#define CHOOSE_OUTPUT_NAME 1
+
+typedef void (*FuncaoEscrita)(FILE *, void *, int, int);
+typedef void (*FuncaoPadraoVoid)(void *);
+typedef int (*FuncaoPadraoInt)(void *);
 
 typedef struct record_ Record;
 
@@ -320,7 +325,8 @@ void write_file_body(FILE *fp, FILE *source_csv){
 
 /* Função principal da funcionalidade 1. File_name é nome do csv que deve ser lido */
 void write_file(char *file_name){
-    char output_name[] = {"arquivoTrab1.bin"};
+    char output_name[30] = {"arquivoTrab1.bin"};
+    if (CHOOSE_OUTPUT_NAME) scanf("%s", output_name);
 
     FILE *fp = fopen(output_name, "wb+");
     if (fp == NULL){
@@ -1267,7 +1273,7 @@ void sort_file(char *filename){
         exit(0);
     }
 
-    List *l = list_create((void *)get_record_id, (void *)record_free, (void *)record_print);
+    List *l = list_create((FuncaoPadraoInt) get_record_id, (FuncaoPadraoVoid) record_free, (FuncaoPadraoVoid) record_print);
 
     char tags[5][TAG_SIZE];
 
@@ -1291,7 +1297,7 @@ void sort_file(char *filename){
     FILE *output_file = fopen(filename2, "wb+");
 
     write_new_header(output_file, tags);
-    list_write_records(l, output_file, (void (*)(FILE *, void *, int, int))write_record);
+    list_write_records(l, output_file, (FuncaoEscrita) write_record);
     if (PRINT_ORDERED_LIST) list_print(l);
     list_free(l);
 
@@ -1305,7 +1311,7 @@ void sort_file(char *filename){
 
 /* Copia o cabeçalho de original p/ output, escrevendo encadeaento como -1. Altera fps p/ proxima pg. disco */
 void copy_file_header(FILE *original, FILE *output){
-    char *header[DISK_PG];
+    char header[DISK_PG];
     fread(header, sizeof(char), DISK_PG, original);
     long long temp = -1;
 
@@ -1395,6 +1401,7 @@ void intersect_files_routine(FILE *f1, FILE *f2, FILE *f3){
     record_free(b);
 }
 
+/* Funcao principal da funcionalidade 8 */
 void merge_files(char *filename){
     char filename2[30];
     char filename3[30];
@@ -1419,6 +1426,7 @@ void merge_files(char *filename){
     fclose(file3);
 }
 
+/* Funcao printipal da funcionalidade 9 */
 void intersect_files(char *filename){
     char filename2[30];
     char filename3[30];
@@ -1441,4 +1449,9 @@ void intersect_files(char *filename){
     set_safety_byte(file3, '1');
     if (PRINT_FILE_ON_SCREEN) binarioNaTela1(file3);
     fclose(file3);
+}
+
+/* Funcao principal da funcionalidade 10 */
+void create_index(char *filename){
+
 }

@@ -80,3 +80,19 @@ void list_write_records(List *l, FILE *fp, void (*write_function)(FILE *fp, void
 		cur = cur->next;
 	}
 }
+
+int list_write_index(List *l, FILE *fp, void (*write_function)(FILE *fp, void *item), int (*is_valid_item)(void *item)){
+	if (l == NULL || fp == NULL) return 0;
+
+	Node *cur = l->start->next;
+
+	int n_written;
+	for (n_written = 0; cur != NULL; n_written++){
+		while (cur != NULL && !is_valid_item(cur->item)) cur = cur->next;
+		if (cur != NULL){
+			write_function(fp, cur->item);
+			cur = cur->next;
+		}
+	}
+	return n_written;
+}

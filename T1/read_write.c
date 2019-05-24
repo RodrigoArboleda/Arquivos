@@ -25,9 +25,11 @@
 #define PRINT_ORDERED_LIST 0
 #define CHOOSE_OUTPUT_NAME 1
 
-typedef void (*FuncaoEscrita)(FILE *, void *, int, int);
+typedef void (*FuncaoEscritaDado)(FILE *, void *, int, int);
+typedef void (*FuncaoEscritaIndice)(FILE *, void *);
 typedef void (*FuncaoPadraoVoid)(void *);
 typedef int (*FuncaoComparacao)(void *, void *);
+typedef int (*FuncaoItemValido)(void *);
 
 typedef struct record_ Record;
 
@@ -37,13 +39,15 @@ struct record_{
     char telefoneServidor[15];
     double salarioServidor;
     int idServidor;
+    long long byte_offset;
 };
 
-Record *record_create(int id, double salario, char *telefone, char *nome, char *cargo){
+Record *record_create(int id, double salario, char *telefone, char *nome, char *cargo, long long byte_offset){
     Record *r = (Record *)malloc(sizeof(Record));
 
     r->idServidor = id;
     r->salarioServidor = salario;
+    r->byte_offset = byte_offset;
 
     memcpy(r->telefoneServidor, telefone, sizeof(r->telefoneServidor));
     memcpy(r->nomeServidor, nome, sizeof(r->nomeServidor));
@@ -136,6 +140,11 @@ void skip_record(FILE *fp){
     if (!feof(fp)) fseek(fp, -1L, SEEK_CUR);   // volta p/ byte de rmeovido, inicio do registro
 }
 
+void set_byte_offset(Record *r, long long new_offset){
+    if (r == NULL) return;
+    r->byte_offset = new_offset;
+}
+
 /* Le e retorna registro do arquivo csv apontado por fp */
 Record *read_record(FILE *fp){
     int id = INVALID;
@@ -158,7 +167,7 @@ Record *read_record(FILE *fp){
 
 
     if (id == INVALID || salario == INVALID) return NULL;
-    return record_create(id, salario, telefone, nome, cargo);
+    return record_create(id, salario, telefone, nome, cargo, -1);
 }
 
 /* Preenche o buffer com lixo e depois escreve str por cima */
@@ -292,6 +301,8 @@ void write_record(FILE *fp, Record *r, int last_record, int is_writing_size){
     long long temp1 = -1;
     if (is_writing_size) size -= 5;  /* desconsidero os 5 primeiros bytes pra escrever no registro */
 
+    set_byte_offset(r, ftell(fp));
+
     fwrite("-", sizeof(char), 1, fp);
     fwrite(&size, sizeof(int), 1, fp);
     fwrite(&temp1, sizeof(long long), 1, fp);       // encadeamento
@@ -372,7 +383,8 @@ Record *read_record_binary(FILE *fp){
 
     fread(&removed, sizeof(char), 1, fp);   // ler byte removido
     fread(&size, sizeof(int), 1, fp);       // le tamanho
-    int start_pos = ftell(fp);
+
+    long long start_pos = ftell(fp);
 
     if (feof(fp)) return NULL;
 
@@ -381,7 +393,6 @@ Record *read_record_binary(FILE *fp){
         if (end == -1) return NULL;     // final de arquivo
         return read_record_binary(fp);
     }
-
 
     fread(&index, sizeof(long long), 1, fp); // le inicio da lista
     fread(&id, sizeof(int), 1, fp);          // le id do funcionario
@@ -406,7 +417,7 @@ Record *read_record_binary(FILE *fp){
 
     fseek(fp, (long)(start_pos + size), SEEK_SET);
 
-    return record_create(id, salario, telefone, nome, cargo);
+    return record_create(id, salario, telefone, nome, cargo, start_pos - 5);
 }
 
 /* Função que imprime o registro no formato da funcionalidade 2 */
@@ -890,7 +901,7 @@ Record *read_record_stdin(){
     scan_quote_string(nome);
     scan_quote_string(cargo);
 
-    return record_create(id, salario, tel, nome, cargo);
+    return record_create(id, salario, tel, nome, cargo, -1);
 }
 
 /* Função de debug que imprime o registro em forma de bytes. Não altera o fp */
@@ -1316,7 +1327,7 @@ void sort_file(char *filename){
     if (output_file == NULL) exit(0);
 
     write_new_header(output_file, tags);
-    list_write_records(l, output_file, (FuncaoEscrita) write_record);
+    list_write_records(l, output_file, (FuncaoEscritaDado) write_record);
 
     if (PRINT_ORDERED_LIST) list_print(l);
     list_free(l);
@@ -1486,14 +1497,32 @@ void intersect_files(char *filename){
     fclose(file3);
 }
 
-void print_record_name(Record *r){
+void record_print_name(Record *r){
     if (r == NULL) puts("REGISTRO NULO");
-    if (r->nomeServidor[0] == '\0') puts("NOME NULO");
-    else puts(r->nomeServidor);
+    if (r->nomeServidor[0] == '\0') printf("%06ld : NOME NULO\n", r->byte_offset);
+    else printf("%06d : %s\n", (int)r->byte_offset, r->nomeServidor);
+}
+
+void write_index_entry(FILE *fp, Record *r){
+    char buffer[120];
+    replace_trash(r->nomeServidor, buffer, 120);
+    fwrite(buffer, sizeof(char), 120, fp);
+    fwrite(&(r->byte_offset), sizeof(long long), 1, fp);
+}
+
+int has_name(Record *r){
+    if (r == NULL) return 0;
+    return r->nomeServidor[0] != '\0';
+}
+
+void set_number_records(FILE *fp, int n_records){
+    fseek(fp, 1L, SEEK_SET);
+    fwrite(&n_records, sizeof(int), 1, fp);
 }
 
 void write_index_body(FILE *fp, List *l){
-
+    int n_records = list_write_index(l, fp, (FuncaoEscritaIndice) write_index_entry, (FuncaoItemValido) has_name);
+    set_number_records(fp, n_records);
 }
 
 void write_index_header(FILE *fp, List *l){
@@ -1522,7 +1551,7 @@ void create_index(char *filename){
 
     if (PRINT_FILE_ON_SCREEN) binarioNaTela1(index_file);
 
-    List *l = list_create((FuncaoComparacao) strcmp, (FuncaoPadraoVoid) record_free, (FuncaoPadraoVoid) record_print);
+    List *l = list_create((FuncaoComparacao) strcmp, (FuncaoPadraoVoid) record_free, (FuncaoPadraoVoid) record_print_name);
     fill_list_records(source, l);
     fclose(source);
 

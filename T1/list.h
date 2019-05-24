@@ -33,4 +33,6 @@ void list_print(List *l);
 
 void list_write_records(List *l, FILE *fp, void (*write_function)(FILE *fp, void *item, int prev, int w_size));
 
+int list_write_index(List *l, FILE *fp, void (*write_function)(FILE *fp, void *item), int (*is_valid_item)(void *item));
+
 #endif

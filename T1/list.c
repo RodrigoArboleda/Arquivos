@@ -1,12 +1,9 @@
 #include "list.h"
 
-Node *node_create(void *item, int (*get_sort_param)(void *item)){
+Node *node_create(void *item){
 	Node *n = (Node *)malloc(sizeof(Node));
 	n->item = item;
 	n->next = NULL;
-	
-	if (item != NULL) n->sort_param = get_sort_param(item);
-	else n->sort_param = 0;
 
 	return n;
 }
@@ -19,14 +16,14 @@ void node_free(Node *n, void (*free_function)(void *item)){
 	free(n);
 }
 
-List *list_create(int (*get_sort_param)(void *), void (*free_function)(void *), void (*print_function)(void *)){
+List *list_create(int (*compare_function)(void *, void *), void (*free_function)(void *), void (*print_function)(void *)){
 	List *l = (List *)malloc(sizeof(List));
-	
+
 	l->free_function = free_function;
-	l->get_sort_param = get_sort_param;
+	l->compare_function = compare_function;
 	l->print_function = print_function;
 
-	l->start = node_create(NULL, NULL);
+	l->start = node_create(NULL);
 
 	return l;
 }
@@ -35,15 +32,16 @@ void list_insert(List *l, void *item){
 	if (l == NULL || item == NULL) return;
 
 	Node *cur = l->start;
-	Node *insert = node_create(item, l->get_sort_param);
+	Node *insert = node_create(item);
 
-	while (cur->next != NULL && insert->sort_param > cur->next->sort_param) cur = cur->next;
+	/* Como estou comparando com <=, a ordenação fica estável em termos de byte offset */
+	while (cur->next != NULL && l->compare_function(insert->item, cur->next->item) >= 0) cur = cur->next;
 
 	if (cur->next == NULL){
 		cur->next = insert;
 	} else {
 		insert->next = cur->next;
-		cur->next = insert;		
+		cur->next = insert;
 	}
 }
 
@@ -77,7 +75,7 @@ void list_write_records(List *l, FILE *fp, void (*write_function)(FILE *fp, void
 	while (cur != NULL){
 		current = ftell(fp);
 		write_function(fp, cur->item, prev, 1);
-	
+
 		prev = current;
 		cur = cur->next;
 	}

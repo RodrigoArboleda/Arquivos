@@ -27,7 +27,7 @@
 
 typedef void (*FuncaoEscrita)(FILE *, void *, int, int);
 typedef void (*FuncaoPadraoVoid)(void *);
-typedef int (*FuncaoPadraoInt)(void *);
+typedef int (*FuncaoComparacao)(void *, void *);
 
 typedef struct record_ Record;
 
@@ -76,6 +76,17 @@ char safety_byte(FILE *fp){
     fread(&byte, sizeof(char), 1, fp);
     fseek(fp, start_pos, SEEK_SET);   // retorna pra pos. original
     return byte;
+}
+
+/* Retorna nulo caso haja algum erro no arquivo, caso contrario retorna fp */
+FILE *safe_open_file(char *filename, char *open_mode){
+    FILE *fp = fopen(filename, open_mode);
+    if (fp == NULL || (open_mode[0] != 'w' && safety_byte(fp) != '1')){
+        puts("Falha no processamento do arquivo.");
+        if (fp != NULL) fclose(fp);
+        return NULL;
+    }
+    return fp;
 }
 
 /* Dado fp no início do registro, diz se ele está removido. Não altera o fp */
@@ -1242,11 +1253,6 @@ void update_records(char *filename){
     fclose(fp);
 }
 
-int get_record_id(Record *r){
-    if (r == NULL) return -1;
-    return r->idServidor;
-}
-
 void write_new_header(FILE *fp, char tags[][TAG_SIZE]){
     fseek(fp, 0L, SEEK_SET);
 
@@ -1261,19 +1267,36 @@ void write_new_header(FILE *fp, char tags[][TAG_SIZE]){
     fwrite(trash, sizeof(char), bytes_until_new_page(fp), fp);
 }
 
+/* Retorna 1 se a > b, 0 se a = b, -1 se a < b */
+int has_greater_id(Record *a, Record *b){
+    if (a == NULL || b == NULL) return -1;
+
+    if (a->idServidor > b->idServidor) return 1;
+    if (a->idServidor < b->idServidor) return -1;
+    return 0;
+}
+
+/* Insere os registros nao removidos na lista. Altera fp p/ final do arquivo */
+void fill_list_records(FILE *fp, List *l){
+    fseek(fp, DISK_PG, SEEK_SET);
+
+    Record *r;
+    for (int i = 0; !feof(fp); i++){
+        if (is_removed(fp)) skip_record(fp);
+        r = read_record_binary(fp);
+        list_insert(l, r);
+    }
+}
+
 /* Funcao principal da funcionalidade 7 */
 void sort_file(char *filename){
     char filename2[30];
     scanf("%s", filename2);
 
-    FILE *original_file = fopen(filename, "rb");
+    FILE *original_file = safe_open_file(filename, "rb");
+    if (original_file == NULL) exit(0);
 
-    if (original_file == NULL || safety_byte(original_file) == '0'){
-        printf("Falha no processamento do arquivo.\n");
-        exit(0);
-    }
-
-    List *l = list_create((FuncaoPadraoInt) get_record_id, (FuncaoPadraoVoid) record_free, (FuncaoPadraoVoid) record_print);
+    List *l = list_create((FuncaoComparacao) has_greater_id, (FuncaoPadraoVoid) record_free, (FuncaoPadraoVoid) record_print);
 
     char tags[5][TAG_SIZE];
 
@@ -1286,21 +1309,17 @@ void sort_file(char *filename){
 
     fseek(original_file, DISK_PG, SEEK_SET);
 
-    Record *r;
-    for (int i = 0; !feof(original_file); i++){
-        if (is_removed(original_file)) skip_record(original_file);
-        r = read_record_binary(original_file);
-        list_insert(l, r);
-    }
+    fill_list_records(original_file, l);
     fclose(original_file);
 
-    FILE *output_file = fopen(filename2, "wb+");
+    FILE *output_file = safe_open_file(filename2, "wb+");
+    if (output_file == NULL) exit(0);
 
     write_new_header(output_file, tags);
     list_write_records(l, output_file, (FuncaoEscrita) write_record);
+
     if (PRINT_ORDERED_LIST) list_print(l);
     list_free(l);
-
 
     set_safety_byte(output_file, '1');
 
@@ -1407,12 +1426,20 @@ void merge_files(char *filename){
     char filename3[30];
     scanf("%s %s", filename2, filename3);
 
-    FILE *file1 = fopen(filename, "rb");
-    FILE *file2 = fopen(filename2, "rb");
-    FILE *file3 = fopen(filename3, "wb+");
+    FILE *file1 = safe_open_file(filename, "rb");
+    if (file1 == NULL){
+        exit(0);
+    }
 
-    if (file1 == NULL || file2 == NULL || safety_byte(file1) != '1' || safety_byte(file2) != '1'){
-        puts("Falha no processamento do arquivo.");
+    FILE *file2 = safe_open_file(filename2, "rb");
+    if (file2 == NULL){
+        fclose(file1);
+        exit(0);
+    }
+
+    FILE *file3 = safe_open_file(filename3, "wb+");
+    if (file3 == NULL){
+        fclose(file1); fclose (file2);
         exit(0);
     }
 
@@ -1432,12 +1459,20 @@ void intersect_files(char *filename){
     char filename3[30];
     scanf("%s %s", filename2, filename3);
 
-    FILE *file1 = fopen(filename, "rb");
-    FILE *file2 = fopen(filename2, "rb");
-    FILE *file3 = fopen(filename3, "wb+");
+    FILE *file1 = safe_open_file(filename, "rb");
+    if (file1 == NULL){
+        exit(0);
+    }
 
-    if (file1 == NULL || file2 == NULL || safety_byte(file1) != '1' || safety_byte(file2) != '1'){
-        puts("Falha no processamento do arquivo.");
+    FILE *file2 = safe_open_file(filename2, "rb");
+    if (file2 == NULL){
+        fclose(file1);
+        exit(0);
+    }
+
+    FILE *file3 = safe_open_file(filename3, "wb+");
+    if (file3 == NULL){
+        fclose(file1); fclose (file2);
         exit(0);
     }
 
@@ -1451,7 +1486,52 @@ void intersect_files(char *filename){
     fclose(file3);
 }
 
+void print_record_name(Record *r){
+    if (r == NULL) puts("REGISTRO NULO");
+    if (r->nomeServidor[0] == '\0') puts("NOME NULO");
+    else puts(r->nomeServidor);
+}
+
+void write_index_body(FILE *fp, List *l){
+
+}
+
+void write_index_header(FILE *fp, List *l){
+    char trash[DISK_PG];
+    memset(trash, TRASH, sizeof(trash));
+
+    fseek(fp, 0L, SEEK_SET);
+
+    fwrite("0", sizeof(char), 1, fp);
+    fwrite(trash, sizeof(char), bytes_until_new_page(fp), fp);
+}
+
 /* Funcao principal da funcionalidade 10 */
 void create_index(char *filename){
+    char filename2[30];
+    scanf("%s", filename2);
 
+    FILE *source = safe_open_file(filename, "rb");
+    if (source == NULL) return;
+
+    FILE *index_file = safe_open_file(filename2, "wb");
+    if (index_file == NULL){
+        fclose(source);
+        exit(0);
+    }
+
+    if (PRINT_FILE_ON_SCREEN) binarioNaTela1(index_file);
+
+    List *l = list_create((FuncaoComparacao) strcmp, (FuncaoPadraoVoid) record_free, (FuncaoPadraoVoid) record_print);
+    fill_list_records(source, l);
+    fclose(source);
+
+    write_index_header(index_file, l);
+    write_index_body(index_file, l);
+
+    if (PRINT_ORDERED_LIST) list_print(l);
+    list_free(l);
+
+    set_safety_byte(index_file, '1');
+    fclose(index_file);
 }

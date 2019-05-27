@@ -5,12 +5,13 @@
 #include "read_write.h"
 #include "escrevernatela.h"
 #include "list.h"
+#include "utils.h"
+#include "index.h"
 
 /* Victor Giovannoni 10786159 */
 /* OBS: Em alguns comentários, quando digo que a função não altera o fp,
    quero dizer que não altera a posição do fp que foi passada como parâmetro */
 
-#define DISK_PG 32000
 #define TRASH '@'
 #define INVALID -1337
 #define MAX_SIZE 200
@@ -21,15 +22,9 @@
 #define PRINT_RECORDS 0
 #define BRIEF_REPORT 0
 #define PRINT_NOT_MOVED 0
-#define PRINT_FILE_ON_SCREEN 0
+#define PRINT_FILE_ON_SCREEN 1
 #define PRINT_ORDERED_LIST 0
-#define CHOOSE_OUTPUT_NAME 1
-
-typedef void (*FuncaoEscritaDado)(FILE *, void *, int, int);
-typedef void (*FuncaoEscritaIndice)(FILE *, void *);
-typedef void (*FuncaoPadraoVoid)(void *);
-typedef int (*FuncaoComparacao)(void *, void *);
-typedef int (*FuncaoItemValido)(void *);
+#define CHOOSE_OUTPUT_NAME 0
 
 typedef struct record_ Record;
 
@@ -1324,7 +1319,10 @@ void sort_file(char *filename){
     fclose(original_file);
 
     FILE *output_file = safe_open_file(filename2, "wb+");
-    if (output_file == NULL) exit(0);
+    if (output_file == NULL){
+        fclose(output_file);
+        exit(0);
+    }
 
     write_new_header(output_file, tags);
     list_write_records(l, output_file, (FuncaoEscritaDado) write_record);
@@ -1367,13 +1365,13 @@ void merge_files_routine(FILE *f1, FILE *f2, FILE *f3){
     while (!feof(f1) && !feof(f2)){
         current = ftell(f3);
         if (a->idServidor > b->idServidor) {
-            write_record(f3, a, previous, 1);
-            record_free(a);
-            a = read_record_binary(f1);
-        } else if (a->idServidor < b->idServidor){
             write_record(f3, b, previous, 1);
             record_free(b);
             b = read_record_binary(f2);
+        } else if (a->idServidor < b->idServidor){
+            write_record(f3, a, previous, 1);
+            record_free(a);
+            a = read_record_binary(f1);
         } else {
             write_record(f3, a, previous, 1);
             record_free(a);
@@ -1412,10 +1410,10 @@ void intersect_files_routine(FILE *f1, FILE *f2, FILE *f3){
 
     while (!feof(f1) && !feof(f2)){
         current = ftell(f3);
-        if (a->idServidor > b->idServidor){
+        if (a->idServidor < b->idServidor){
             record_free(a);
             a = read_record_binary(f1);
-        } else if (a->idServidor < b->idServidor){
+        } else if (a->idServidor > b->idServidor){
             record_free(b);
             b = read_record_binary(f2);
         } else {
@@ -1499,7 +1497,7 @@ void intersect_files(char *filename){
 
 void record_print_name(Record *r){
     if (r == NULL) puts("REGISTRO NULO");
-    if (r->nomeServidor[0] == '\0') printf("%06ld : NOME NULO\n", r->byte_offset);
+    if (r->nomeServidor[0] == '\0') printf("%06d : NOME NULO\n", (int)r->byte_offset);
     else printf("%06d : %s\n", (int)r->byte_offset, r->nomeServidor);
 }
 
@@ -1536,20 +1534,18 @@ void write_index_header(FILE *fp, List *l){
 }
 
 /* Funcao principal da funcionalidade 10 */
-void create_index(char *filename){
+void create_index_file(char *filename){
     char filename2[30];
     scanf("%s", filename2);
 
     FILE *source = safe_open_file(filename, "rb");
     if (source == NULL) return;
 
-    FILE *index_file = safe_open_file(filename2, "wb");
+    FILE *index_file = safe_open_file(filename2, "wb+");
     if (index_file == NULL){
         fclose(source);
         exit(0);
     }
-
-    if (PRINT_FILE_ON_SCREEN) binarioNaTela1(index_file);
 
     List *l = list_create((FuncaoComparacao) strcmp, (FuncaoPadraoVoid) record_free, (FuncaoPadraoVoid) record_print_name);
     fill_list_records(source, l);
@@ -1562,5 +1558,37 @@ void create_index(char *filename){
     list_free(l);
 
     set_safety_byte(index_file, '1');
+    if (PRINT_FILE_ON_SCREEN) binarioNaTela1(index_file);
+    fclose(index_file);
+}
+
+int get_number_records(FILE *index){
+    long long start = ftell(index);
+    int n_records;
+
+    fseek(index, 1L, SEEK_SET);
+    fread(&n_records, sizeof(int), 1, index);
+
+    fseek(index, start, SEEK_SET);
+    return n_records;
+}
+
+
+void search_index(char *filename){
+    char filename2[30];
+    scanf("%s", filename2);
+
+    FILE *source = safe_open_file(filename, "rb");
+    if (source == NULL) exit(0);
+
+    FILE *index_file = safe_open_file(filename, "rb");
+    if (index_file == NULL){
+        fclose(source);
+        exit(0);
+    }
+
+    Index *idx = index_load_from_file(index_file);
+
+    fclose(source);
     fclose(index_file);
 }

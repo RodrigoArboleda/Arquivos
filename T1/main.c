@@ -39,6 +39,6 @@ int main(){
             intersect_files(filename);
             break;
         case 10:
-            create_index(filename);
+            create_index_file(filename);
     }
 }

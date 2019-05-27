@@ -21,6 +21,6 @@ void merge_files(char *filename);
 
 void intersect_files(char *filename);
 
-void create_index(char *filename);
+void create_index_file(char *filename);
 
 #endif

@@ -17,15 +17,6 @@
 #define MAX_SIZE 200
 #define TAG_SIZE 41
 
-/* Macros de debug */
-#define PRINT_LIST 0
-#define PRINT_RECORDS 0
-#define BRIEF_REPORT 0
-#define PRINT_NOT_MOVED 0
-#define PRINT_FILE_ON_SCREEN 1
-#define PRINT_ORDERED_LIST 0
-#define CHOOSE_OUTPUT_NAME 0
-
 typedef struct record_ Record;
 
 struct record_{
@@ -59,6 +50,16 @@ void record_free(Record *r){
 int ceiling(double x){
     if (x == (int)x) return (int)x; // pega arredondamento pq cima de x
     return (int)x + 1;
+}
+
+void read_tags(FILE *fp, char tags[][TAG_SIZE]){
+    fseek(fp, 9L, SEEK_SET);
+
+    fread(tags[0], sizeof(char), TAG_SIZE, fp);
+    fread(tags[1], sizeof(char), TAG_SIZE, fp);
+    fread(tags[2], sizeof(char), TAG_SIZE, fp);
+    fread(tags[3], sizeof(char), TAG_SIZE, fp);
+    fread(tags[4], sizeof(char), TAG_SIZE, fp);
 }
 
 /* atualiza o byte de segurança */
@@ -647,14 +648,7 @@ void search_binary_file(char *file_name){
     }
 
     char tags[5][TAG_SIZE];  // leio a tag e o descritor. tag[i][0] = caracter que define a i-ésima tag
-
-    /* le os metadados do cabeçalho */
-    fseek(fp, (long)9, SEEK_SET);
-    fread(tags[0], sizeof(char), TAG_SIZE, fp);
-    fread(tags[1], sizeof(char), TAG_SIZE, fp);
-    fread(tags[2], sizeof(char), TAG_SIZE, fp);
-    fread(tags[3], sizeof(char), TAG_SIZE, fp);
-    fread(tags[4], sizeof(char), TAG_SIZE, fp);
+    read_tags(fp, tags); /* le os metadados do cabeçalho */
 
     fseek(fp, (long)(DISK_PG), SEEK_SET); // pula cabeçalho
 
@@ -842,14 +836,7 @@ void remove_records(char *filename){
     set_safety_byte(fp, '0');   // atualiza byte de integridade
 
     char tags[5][TAG_SIZE];  // leio a tag e o descritor. tag[i][0] = caracter que define a i-ésima tag
-
-    /* le os metadados do cabeçalho */
-    fseek(fp, (long)9, SEEK_SET);
-    fread(tags[0], sizeof(char), TAG_SIZE, fp);
-    fread(tags[1], sizeof(char), TAG_SIZE, fp);
-    fread(tags[2], sizeof(char), TAG_SIZE, fp);
-    fread(tags[3], sizeof(char), TAG_SIZE, fp);
-    fread(tags[4], sizeof(char), TAG_SIZE, fp);
+    read_tags(fp, tags); /* le os metadados do cabeçalho */
 
     int id;
     double salario;
@@ -994,14 +981,7 @@ void insert_records(char *filename){
     set_safety_byte(fp, '0');   // atualiza byte de integridade
 
     char tags[5][TAG_SIZE];  // leio a tag e o descritor. tag[i][0] = caracter que define a i-ésima tag
-
-    /* le os metadados do cabeçalho */
-    fseek(fp, (long)9, SEEK_SET);
-    fread(tags[0], sizeof(char), TAG_SIZE, fp);
-    fread(tags[1], sizeof(char), TAG_SIZE, fp);
-    fread(tags[2], sizeof(char), TAG_SIZE, fp);
-    fread(tags[3], sizeof(char), TAG_SIZE, fp);
-    fread(tags[4], sizeof(char), TAG_SIZE, fp);
+    read_tags(fp, tags);    /* le os metadados do cabeçalho */
 
     long long last_record_offset = goto_last_record(fp);
     for (int i = 0; i < n; i++){
@@ -1209,14 +1189,7 @@ void update_records(char *filename){
     set_safety_byte(fp, '0');   // atualiza byte de integridade
 
     char tags[5][TAG_SIZE];  // leio a tag e o descritor. tag[i][0] = caracter que define a i-ésima tag
-
-    /* le os metadados do cabeçalho */
-    fseek(fp, (long)9, SEEK_SET);
-    fread(tags[0], sizeof(char), TAG_SIZE, fp);
-    fread(tags[1], sizeof(char), TAG_SIZE, fp);
-    fread(tags[2], sizeof(char), TAG_SIZE, fp);
-    fread(tags[3], sizeof(char), TAG_SIZE, fp);
-    fread(tags[4], sizeof(char), TAG_SIZE, fp);
+    read_tags(fp, tags); /* le os metadados do cabeçalho */
 
     long long last_record_offset = goto_last_record(fp);
 
@@ -1305,13 +1278,7 @@ void sort_file(char *filename){
     List *l = list_create((FuncaoComparacao) has_greater_id, (FuncaoPadraoVoid) record_free, (FuncaoPadraoVoid) record_print);
 
     char tags[5][TAG_SIZE];
-
-    fseek(original_file, (long)9, SEEK_SET);
-    fread(tags[0], sizeof(char), TAG_SIZE, original_file);
-    fread(tags[1], sizeof(char), TAG_SIZE, original_file);
-    fread(tags[2], sizeof(char), TAG_SIZE, original_file);
-    fread(tags[3], sizeof(char), TAG_SIZE, original_file);
-    fread(tags[4], sizeof(char), TAG_SIZE, original_file);
+    read_tags(original_file, tags);
 
     fseek(original_file, DISK_PG, SEEK_SET);
 
@@ -1495,12 +1462,6 @@ void intersect_files(char *filename){
     fclose(file3);
 }
 
-void record_print_name(Record *r){
-    if (r == NULL) puts("REGISTRO NULO");
-    if (r->nomeServidor[0] == '\0') printf("%06d : NOME NULO\n", (int)r->byte_offset);
-    else printf("%06d : %s\n", (int)r->byte_offset, r->nomeServidor);
-}
-
 void write_index_entry(FILE *fp, Record *r){
     char buffer[120];
     replace_trash(r->nomeServidor, buffer, 120);
@@ -1547,7 +1508,7 @@ void create_index_file(char *filename){
         exit(0);
     }
 
-    List *l = list_create((FuncaoComparacao) strcmp, (FuncaoPadraoVoid) record_free, (FuncaoPadraoVoid) record_print_name);
+    List *l = list_create((FuncaoComparacao) strcmp, (FuncaoPadraoVoid) record_free, (FuncaoPadraoVoid) record_print);
     fill_list_records(source, l);
     fclose(source);
 
@@ -1562,6 +1523,7 @@ void create_index_file(char *filename){
     fclose(index_file);
 }
 
+/* Retorna numero de registros no arquivo de indice */
 int get_number_records(FILE *index){
     long long start = ftell(index);
     int n_records;
@@ -1573,21 +1535,90 @@ int get_number_records(FILE *index){
     return n_records;
 }
 
+/* Retorna o índice da busca, ou -1 se nao foi encontrado */
+int binary_search_index(Index *idx, int l, int r, char *key){
+    if (l > r) return -1;
+
+    int mid = (l+r)/2;
+    char *search_name = idx->list[mid]->name;
+    int compare = strcmp(key, search_name);
+
+    if (compare < 0) return binary_search_index(idx, l, mid - 1, key);
+    else if (compare > 0) return binary_search_index(idx, mid + 1, r, key);
+    return mid;
+}
+
+/* Retorna numero de registros encontrados e insere seus offsets no vetor offsets */
+int search_index_routine(Index *idx, char *key, long long *offsets){
+    int find_index = binary_search_index(idx, 0, idx->n_entries - 1, key);
+    if (find_index == -1) return 0;
+
+    /* Acha o primeiro indice que tem o nome igual ao da busca */
+    int first_match = find_index;
+    char *current_name = idx->list[find_index]->name;
+    while (first_match >= 0 && !strcmp(key, current_name)){
+        current_name = idx->list[--first_match]->name;
+        if (PRINTING_MATCH_NAMES) printf("%05d : %s\n", first_match, current_name);
+    }
+    if (PRINTING_MATCH_NAMES) putchar('\n');
+
+
+    /* Percorre os nomes iguais, adicionando na lista de offsets */
+    int n_matches = 0;
+    int current_index = first_match + 1;
+    current_name = idx->list[current_index]->name;
+
+    while (current_index < idx->n_entries && !strcmp(key, current_name)){
+        offsets[n_matches++] = idx->list[current_index]->offset;
+        current_name = idx->list[++current_index]->name;
+
+        if (PRINTING_MATCH_NAMES) printf("%05d : %s\n", current_index, current_name);
+    }
+    if (PRINTING_MATCH_NAMES) putchar('\n');
+
+    return n_matches;
+}
 
 void search_index(char *filename){
     char filename2[30];
-    scanf("%s", filename2);
+    char name[MAX_SIZE];
+
+    scanf("%s %*s %[^\n]", filename2, name);
 
     FILE *source = safe_open_file(filename, "rb");
     if (source == NULL) exit(0);
 
-    FILE *index_file = safe_open_file(filename, "rb");
+    FILE *index_file = safe_open_file(filename2, "rb");
     if (index_file == NULL){
         fclose(source);
         exit(0);
     }
 
+    char tags[5][TAG_SIZE];
+    read_tags(source, tags);
+
     Index *idx = index_load_from_file(index_file);
+    int pgs_indice = ceiling(ftell(index_file)/(double)DISK_PG), pgs_dados = 0;
+
+    long long result_offsets[MAX_SIZE];
+    int n_results = search_index_routine(idx, name, result_offsets);
+
+    if (n_results == 0) printf("Registro inexistente.\n");
+    else {
+        int prev_disk_pg = -1, current_disk_pg;
+
+        for (int i = 0; i < n_results; i++){
+            fseek(source, result_offsets[i], SEEK_SET);
+            current_disk_pg = ceiling(ftell(source)/(double)DISK_PG);
+
+            if (current_disk_pg != prev_disk_pg) pgs_dados++;   // incrementa pg. disco acessadas
+            prev_disk_pg = current_disk_pg;
+
+            Record *r = read_record_binary(source);
+            record_print_tags(r, tags);
+        }
+        printf("Número de páginas de disco para carregar o arquivo de índice: %d\nNúmero de páginas de disco para acessar o arquivo de dados: %d", pgs_indice, n_results);
+    }
 
     fclose(source);
     fclose(index_file);

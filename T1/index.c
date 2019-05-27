@@ -45,6 +45,11 @@ void index_insert(Index *i, FILE *fp){
     i->list[ i->n_entries++ ] = entry_create_fp(fp);
 }
 
+void entry_free(IndexEntry *e){
+    if (e == NULL) return;
+    free(e);
+}
+
 void index_free(Index *idx){
     if (idx == NULL) return;
     for (int i = 0; i < idx->n_entries; i++) entry_free(idx->list[i]);
@@ -52,9 +57,10 @@ void index_free(Index *idx){
     free(idx);
 }
 
-void entry_free(IndexEntry *e){
-    if (e == NULL) return;
-    free(e);
+void print_entry(IndexEntry *e){
+    if (e == NULL) puts("REGISTRO NULO");
+    if (e->name[0] == '\0') printf("%06d : NOME NULO\n", (int)e->offset);
+    else printf("%06d : %s\n", (int)e->offset, e->name);
 }
 
 Index *index_load_from_file(FILE *fp){
@@ -64,6 +70,7 @@ Index *index_load_from_file(FILE *fp){
 
     Index *idx = index_create();
     for (int i = 0; i < n_records; i++) index_insert(idx, fp);
+    if (PRINT_INDEX) for (int i = 0; i < n_records; i++) print_entry(idx->list[i]);
 
     return idx;
 }

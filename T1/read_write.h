@@ -23,4 +23,6 @@ void intersect_files(char *filename);
 
 void create_index_file(char *filename);
 
+void search_index(char *filename);
+
 #endif

@@ -40,5 +40,9 @@ int main(){
             break;
         case 10:
             create_index_file(filename);
+            break;
+        case 11:
+            search_index(filename);
+            break;
     }
 }

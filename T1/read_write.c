@@ -1623,3 +1623,7 @@ void search_index(char *filename){
     fclose(source);
     fclose(index_file);
 }
+
+void compare_complexity(char *filename){
+    
+}

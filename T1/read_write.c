@@ -828,6 +828,7 @@ void remove_records(char *filename){
         exit(0);
     }
 
+    //if de debug
     if (PRINT_LIST){
         print_list(fp);
         return;
@@ -914,13 +915,16 @@ long long goto_last_record(FILE *fp){
     return last_offset;
 }
 
-/* Insere o registro no arquivo, atualizando a lista encadeada se necessário. Não altera o fp */
-void insert_record(FILE *fp, Record *r, long long *last_record_offset){
+/* Insere o registro no arquivo, atualizando a lista encadeada se necessário. Não altera o fp
+Retorno: Local onde o registro foi inserido
+ */
+long long int insert_record(FILE *fp, Record *r, long long *last_record_offset){
     long start_pos = ftell(fp);
+    long long int retorno;
 
     fseek(fp, 1L, SEEK_SET);
 
-    long long next_offset = get_list_start(fp);
+    long long next_offset = get_list_start(fp); // retornar o topo da lista
     long long previous_offset = 1;  // começa offset do topo da lista, caso remova o primeiro
 
     if (next_offset == -1){                         // lista vazia, insiro no final do arquivo
@@ -929,7 +933,7 @@ void insert_record(FILE *fp, Record *r, long long *last_record_offset){
         write_record(fp, r, *last_record_offset, 1);
         *last_record_offset = temp;
         fseek(fp, start_pos, SEEK_SET);
-        return;
+        return temp;
     }
 
     int insert_size = record_size(r) - 5;
@@ -948,7 +952,7 @@ void insert_record(FILE *fp, Record *r, long long *last_record_offset){
             set_next_offset(fp, next_offset);   // faz atual->anterior apontar p/ atual->prox
 
             fseek(fp, start_pos, SEEK_SET);
-            return;
+            return previous_offset;
         }
     }
 
@@ -957,8 +961,11 @@ void insert_record(FILE *fp, Record *r, long long *last_record_offset){
         long long temp = ftell(fp);
         write_record(fp, r, *last_record_offset, 1);
         *last_record_offset = temp;
+        retorno = temp;
     }
     fseek(fp, start_pos, SEEK_SET);
+
+    return retorno;
 }
 
 /* Funcao principal da funcionalidade 5 */
@@ -1120,7 +1127,6 @@ void search_and_update(FILE *fp, int (*compare_function)(FILE *fp, void *key, ch
     int n_found = 0;
 
     int finished = 0;
-    long long start_pos;
     for (int i = 0; !feof(fp) && !finished; i++){
         if (compare_function(fp, key, tag, &finished)) fila_gambs[n_found++] = ftell(fp);
         skip_record(fp);
@@ -1626,4 +1632,219 @@ void search_index(char *filename){
 
 void compare_complexity(char *filename){
     
+}
+
+long long int busca_remove_index(Index *idx, char *key){
+    int find_index = binary_search_index(idx, 0, idx->n_entries - 1, key);
+    if (find_index == -1) return 0;
+
+    /* Acha o primeiro indice que tem o nome igual ao da busca */
+    int first_match = find_index;
+    char *current_name = idx->list[find_index]->name;
+    while (first_match >= 0 && !strcmp(key, current_name)){
+        current_name = idx->list[--first_match]->name;
+    }
+
+    first_match++;
+
+    long long int retorno = idx->list[first_match]->offset;
+
+    while(idx->n_entries > first_match){
+        idx->list[first_match] = idx->list[first_match + 1];
+        first_match++;
+    }
+
+    idx->n_entries--;
+
+    return retorno;
+}
+
+
+void remove_registro_index(char* filename){
+    char index_nome[100];
+    int numero_remocoes;
+
+    scanf("%s", index_nome);
+    scanf("%d", &numero_remocoes);
+
+    FILE* fi;
+    FILE* f;
+
+    fi = fopen(index_nome, "rb+");
+    if (fi == NULL)
+    {
+        printf("Falha no processamento do arquivo.\n");
+        return;
+    }
+
+    f  = fopen(filename, "rb+");
+    
+    if (f == NULL)
+    {
+        printf("Falha no processamento do arquivo.\n");
+        fclose(fi);
+        return;
+    }
+
+    char integridade = 0;
+
+    fread(&integridade, sizeof(char), 1, f);
+    if (integridade != '1')
+    {
+        printf("Falha no processamento do arquivo.\n");
+        fclose(f);
+        fclose(fi);
+        return;
+    }
+
+    fread(&integridade, sizeof(char), 1, fi);
+    if (integridade != '1')
+    {
+        printf("Falha no processamento do arquivo.\n");
+        fclose(f);
+        fclose(fi);
+        return;
+    }
+
+    set_safety_byte(fi, '0');
+    set_safety_byte(f, '0');
+
+
+    fseek(fi, 0 , SEEK_SET);
+    fseek(f, 32000 , SEEK_SET);
+
+    Index* index_ram = index_load_from_file(fi);
+    
+    long long int local_remove;
+
+    char nome_busca[120] = {0};
+
+    for (int i = 0; i < numero_remocoes; ++i)
+    {
+
+        for (int j = 0; j < 120; ++j) nome_busca[j] = 0;
+        
+        scanf("%*s");
+        scan_quote_string(nome_busca);
+
+        local_remove = busca_remove_index(index_ram, nome_busca);
+        
+        if (local_remove != 0)
+        {
+            fseek(f, local_remove, SEEK_SET);
+            remove_record(f);
+        }
+    }
+
+    set_safety_byte(fi, '1');
+    fclose(fi);
+
+    fi = fopen(index_nome, "wb+");
+
+    set_safety_byte(fi, '0');
+
+    grava_index(index_ram, fi);
+
+    index_free(index_ram);
+
+    char integridade2 = '1';
+    
+    fseek(f, 0, SEEK_SET);
+    fwrite(&integridade2, sizeof(char), 1, f);
+
+    set_safety_byte(fi, '1');
+    
+    //if de debug
+    if (PRINT_FILE_ON_SCREEN) binarioNaTela1(fi);
+
+    fclose(f);
+    fclose(fi);
+}
+
+void adiciona_registro_index(char *filename){
+    int n;
+    char index_nome[50] = {0};
+    scanf("%s", index_nome);
+    scanf("%d", &n);
+
+	FILE* fi;
+    FILE* fp;
+
+    fi = fopen(index_nome, "rb+");
+    if (fi == NULL)
+    {
+        printf("Falha no processamento do arquivo.\n");
+        return;
+    }
+
+    fp  = fopen(filename, "rb+");
+    
+    if (fp == NULL)
+    {
+        printf("Falha no processamento do arquivo.\n");
+        fclose(fi);
+        return;
+    }
+
+    char integridade = 0;
+
+    fread(&integridade, sizeof(char), 1, fp);
+    if (integridade != '1')
+    {
+        printf("Falha no processamento do arquivo.\n");
+        fclose(fp);
+        fclose(fi);
+        return;
+    }
+
+    fread(&integridade, sizeof(char), 1, fi);
+    if (integridade != '1')
+    {
+        printf("Falha no processamento do arquivo.\n");
+        fclose(fp);
+        fclose(fi);
+        return;
+    }
+
+    set_safety_byte(fi, '0');
+    set_safety_byte(fp, '0');
+
+    fseek(fi, 0 , SEEK_SET);
+    fseek(fp, 32000 , SEEK_SET);
+
+    Index* i = index_load_from_file(fi);
+
+    char tags[5][TAG_SIZE];  // leio a tag e o descritor. tag[i][0] = caracter que define a i-ésima tag
+    read_tags(fp, tags);    /* le os metadados do cabeçalho */
+
+    long long last_record_offset = goto_last_record(fp);
+    for (int j = 0; j < n; j++){
+    	long long int retorno;
+        Record *r = read_record_stdin();
+        retorno = insert_record(fp, r, &last_record_offset);
+        fseek(fp, retorno, SEEK_SET);
+        insere_index_ordenado(i,fp);
+        record_free(r);
+    }
+
+
+    set_safety_byte(fi, '1');
+    fclose(fi);
+
+    fi = fopen(index_nome, "wb+");
+
+    set_safety_byte(fi, '0');
+
+    grava_index(i, fi);
+
+    index_free(i);
+
+    set_safety_byte(fi, '1');
+    set_safety_byte(fp, '1');
+    
+    //if de debug
+    if (PRINT_FILE_ON_SCREEN) binarioNaTela1(fi);
+
+    fclose(fp);
+    fclose(fi);
 }

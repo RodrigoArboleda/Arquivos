@@ -44,5 +44,11 @@ int main(){
         case 11:
             search_index(filename);
             break;
+    	case 12:
+            remove_registro_index(filename);
+            break;
+    	case 13:
+            adiciona_registro_index(filename);
+            break;
     }
 }

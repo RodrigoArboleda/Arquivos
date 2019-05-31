@@ -25,4 +25,8 @@ void create_index_file(char *filename);
 
 void search_index(char *filename);
 
+void remove_registro_index(char* filename);
+
+void adiciona_registro_index(char *filename);
+
 #endif

@@ -29,4 +29,19 @@ void index_free(Index *idx);
 
 void index_search_by_name(Index *idx, char *key);
 
+/*
+Fucao:Grava no arquivo fi o index OBS: n grava o cabecalho so muda o quanto tem
+Parametro:
+			index_ram: ponteiro por index
+			fi: ponteiro pro arquivo
+*/
+void grava_index(Index* index_ram, FILE* fi);
+
+/*
+Fucao: ordena um index
+Parametro:
+			index_ram: ponteiro por index
+*/
+void insere_index_ordenado(Index *i, FILE *fp);
+
 #endif
